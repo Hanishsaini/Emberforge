@@ -1,0 +1,13 @@
+.forge/
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+.env
+*.db
+forge.log
+.pytest_cache/
+.mypy_cache/
