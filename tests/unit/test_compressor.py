@@ -1,8 +1,8 @@
-"""Unit tests for FORGE compressor pipeline."""
+"""Unit tests for EMBERFORGE compressor pipeline."""
 import pytest
-from forge.compressor import ForgeCompressor
-from forge.compressor.shell import ShellCompressor
-from forge.compressor.ast_compress import ASTCompressor
+from emberforge.compressor import EmberCompressor
+from emberforge.compressor.shell import ShellCompressor
+from emberforge.compressor.ast_compress import ASTCompressor
 
 
 # ── Shell compressor tests ─────────────────────────────────────────────────────
@@ -35,7 +35,7 @@ class TestShellCompressor:
         assert "\n\n\n" not in result.compressed
 
     def test_auto_detect_git(self):
-        text = "On branch main\nmodified: forge/cli.py"
+        text = "On branch main\nmodified: emberforge/cli.py"
         result = self.c.compress(text)  # auto detect
         assert result.compressed  # should not be empty
 
@@ -105,9 +105,9 @@ class MyRouter(BaseRouter):
 
 
 # ── Pipeline tests ─────────────────────────────────────────────────────────────
-class TestForgeCompressor:
+class TestEmberCompressor:
     def setup_method(self):
-        self.c = ForgeCompressor()
+        self.c = EmberCompressor()
 
     def test_code_pipeline(self):
         source = '''

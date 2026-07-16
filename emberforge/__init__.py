@@ -1,8 +1,8 @@
 """
-FORGE — Free, Open-source, Routing & Generation Engine
+EMBERFORGE — Free, Open-source, Routing & Generation Engine
 A self-improving agentic coding harness. Built to replace Claude Code.
 
-github.com/Hanishsaini/forge
+github.com/Hanishsaini/emberforge
 """
 
 __version__ = "0.1.0"

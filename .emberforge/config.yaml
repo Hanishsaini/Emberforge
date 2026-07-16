@@ -1,0 +1,128 @@
+# EMBERFORGE Configuration
+# ~/.emberforge/config.yaml — edit this with your actual API keys
+
+providers:
+  groq:
+    api_key:        # console.groq.com/keys
+    enabled: true
+    tier: "fast_free"
+    models:
+      primary: "llama-3.3-70b-versatile"
+      fallback: "llama3.1-8b"
+    base_url: "https://api.groq.com/openai/v1"
+    rpm_limit: 30
+    tpd_limit: 500000
+
+  gemini:
+    api_key:     # aistudio.google.com/apikey
+    enabled: true
+    tier: "smart_free"
+    models:
+      primary: "gemini-2.0-flash"
+      fallback: "gemini-1.5-flash"
+    base_url: "https://generativelanguage.googleapis.com/v1beta/openai"
+    rpm_limit: 15
+
+  nvidia_nim:
+    api_key:       # build.nvidia.com/settings/api-keys
+    enabled: true
+    tier: "best_free"
+    models:
+      primary: "moonshotai/kimi-k2.5"
+      fallback: "nvidia/nemotron-3-super-120b-a12b"
+    base_url: "https://integrate.api.nvidia.com/v1"
+    rpm_limit: 10
+
+  opencode:
+    api_key:           # opencode.ai/auth
+    enabled: true
+    tier: "smart_free"
+    models:
+      primary: "deepseek-v4-flash-free"
+      fallback: "big-pickle"
+    base_url: "https://opencode.ai/zen/v1"
+    rpm_limit: 20
+
+  mistral:
+    api_key:          # console.mistral.ai
+    enabled: true
+    tier: "smart_free"
+    models:
+      primary: "devstral-small-latest"
+      fallback: "mistral-small-latest"
+    base_url: "https://api.mistral.ai/v1"
+    rpm_limit: 5
+
+  openrouter:
+    api_key:          # openrouter.ai/keys
+    enabled: true
+    tier: "smart_free"
+    models:
+      primary: "openrouter/auto"
+      fallback: "deepseek/deepseek-chat-v3-0324:free"
+    base_url: "https://openrouter.ai/api/v1"
+    rpm_limit: 20
+
+  ollama:
+    api_key: "ollama"
+    enabled: true
+    tier: "local"
+    models:
+      primary: "qwen2.5-coder:7b"
+      fallback: "llama3.1:8b"
+    base_url: "http://localhost:11434/v1"
+    rpm_limit: 999
+
+routing:
+  # Task type → minimum tier required
+  task_tiers:
+    autocomplete: "local"
+    explain:      "fast_free"
+    debug:        "fast_free"
+    test:         "smart_free"
+    refactor:     "smart_free"
+    write:        "smart_free"
+    architecture: "best_free"
+    research:     "best_free"
+    review:       "best_free"
+
+  # Tier priority order (first = highest priority)
+  tier_order:
+    - "local"
+    - "fast_free"
+    - "smart_free"
+    - "best_free"
+
+  # Router judge model (local, for task classification)
+  judge_model: "ollama"
+  fallback_on_quality_score: 0.4  # retry if response quality below this
+
+compressor:
+  enabled: true
+  shell_output: true          # compress git/npm/cargo dumps
+  signature_mode: true        # file reads → signatures first
+  ast_compression: true       # AST-aware code compression
+  simhash_dedup: true        # deduplicate similar chunks
+  max_context_tokens: 4000
+  signature_cache_ttl: 3600   # seconds
+
+memory:
+  enabled: true
+  backend: "sqlite"
+  path: "~/.emberforge/memory.db"
+  skill_auto_generate: true   # Hermes-style post-task skill gen
+  skill_threshold: 5          # tool calls before skill generation
+  session_persist: true
+
+output:
+  verbosity_trim: true        # inject terse system prompt suffix
+  stream: true
+  show_token_stats: true
+  show_provider: true
+  show_cost_saved: true
+
+emberforge:
+  version: "0.1.0"
+  telemetry: false            # zero telemetry, always
+  log_level: "INFO"
+  log_file: "~/.emberforge/emberforge.log"

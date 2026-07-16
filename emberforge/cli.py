@@ -1,14 +1,14 @@
 """
-FORGE CLI — terminal interface, drop-in Claude Code substitute.
+EMBERFORGE CLI — terminal interface, drop-in Claude Code substitute.
 
 Commands:
-  forge run "task"      → run a task
-  forge init            → setup ~/.forge/config.yaml
-  forge status          → show provider health
-  forge skills          → list all learned skills
-  forge learn           → force skill generation from recent sessions
-  forge stats           → session + lifetime token stats
-  forge providers       → list all providers + health
+  emberforge run "task"      → run a task
+  emberforge init            → setup ~/.emberforge/config.yaml
+  emberforge status          → show provider health
+  emberforge skills          → list all learned skills
+  emberforge learn           → force skill generation from recent sessions
+  emberforge stats           → session + lifetime token stats
+  emberforge providers       → list all providers + health
 """
 from __future__ import annotations
 
@@ -22,28 +22,29 @@ from rich.markdown import Markdown
 from rich import box
 
 app     = typer.Typer(
-    name="forge",
-    help="FORGE — Free, Open-source, Routing & Generation Engine",
+    name="emberforge",
+    help="EMBERFORGE — Free, Open-source, Routing & Generation Engine",
     add_completion=False,
     invoke_without_command=False,
 )
 console = Console()
 
-BANNER = """[bold cyan]
-███████╗ ██████╗ ██████╗  ██████╗ ███████╗
-██╔════╝██╔═══██╗██╔══██╗██╔════╝ ██╔════╝
-█████╗  ██║   ██║██████╔╝██║  ███╗█████╗  
-██╔══╝  ██║   ██║██╔══██╗██║   ██║██╔══╝  
-██║     ╚██████╔╝██║  ██║╚██████╔╝███████╗
-╚═╝      ╚═════╝ ╚═╝  ╚═╝ ╚═════╝ ╚══════╝[/bold cyan]
-[dim]Free · Open-source · Routing & Generation Engine[/dim]
-[dim]Built by Honey Stark — github.com/Hanishsaini/forge[/dim]
+BANNER = """[bold red]
+███████╗███╗   ███╗██████╗ ███████╗██████╗
+██╔════╝████╗ ████║██╔══██╗██╔════╝██╔══██╗
+█████╗  ██╔████╔██║██████╔╝█████╗  ██████╔╝
+██╔══╝  ██║╚██╔╝██║██╔══██╗██╔══╝  ██╔══██╗
+███████╗██║ ╚═╝ ██║██████╔╝███████╗██║  ██║
+╚══════╝╚═╝     ╚═╝╚═════╝ ╚══════╝╚═╝  ╚═╝[/bold red]
+[bold yellow]        F  ·  O  ·  R  ·  G  ·  E[/bold yellow]
+[dim]EmberForge — Free · Open-source · Routing & Generation Engine[/dim]
+[dim]Built by Honey Stark — github.com/Hanishsaini/emberforge[/dim]
 """
 
 
-def _get_forge(project: str, repo: str, verbose: bool):
-    from forge.core import Forge
-    return Forge(project=project, repo_path=repo, verbose=verbose)
+def _get_emberforge(project: str, repo: str, verbose: bool):
+    from emberforge.core import Ember
+    return Ember(project=project, repo_path=repo, verbose=verbose)
 
 
 def _detect_project(path: str) -> str:
@@ -95,10 +96,10 @@ def run(
     """Run a coding task."""
     project = project or _detect_project(repo)
     mode    = "full" if full else "signatures"
-    forge   = _get_forge(project, repo, verbose=not quiet)
+    emberforge   = _get_emberforge(project, repo, verbose=not quiet)
 
     async def _run():
-        result = await forge.run(
+        result = await emberforge.run(
             prompt=prompt,
             use_context=not no_context,
             context_mode=mode,
@@ -110,13 +111,110 @@ def run(
     asyncio.run(_run())
 
 
+def _interactive_approver(name: str, desc: str, preview: str) -> bool:
+    """CLI approval gate: show what the agent wants to do, ask y/n."""
+    console.print(f"\n[bold yellow]⚠ Agent wants to run:[/bold yellow] [bold]{desc}[/bold]")
+    if preview:
+        console.print(f"[dim]{preview[:2000]}[/dim]")
+    return typer.confirm("  Allow?", default=True)
+
+
+@app.command(name="agent")
+def agent(
+    prompt: str = typer.Argument(..., help="Task for the agent to complete"),
+    project: str = typer.Option("", "--project", "-p"),
+    repo: str = typer.Option(".", "--repo", "-r"),
+    max_steps: int = typer.Option(25, "--max-steps", help="Agent loop budget"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Auto-approve edits and shell commands"),
+    quiet: bool = typer.Option(False, "--quiet", "-q"),
+):
+    """Agentic run: EMBERFORGE explores the repo, edits files, runs commands in a loop."""
+    project = project or _detect_project(repo)
+    emberforge   = _get_emberforge(project, repo, verbose=not quiet)
+
+    async def _run():
+        result = await emberforge.run_agent(
+            prompt=prompt,
+            auto_approve=yes,
+            approver=None if yes else _interactive_approver,
+            max_steps=max_steps,
+        )
+        console.print()
+        if "```" in result.content:
+            console.print(Markdown(result.content))
+        else:
+            console.print(result.content)
+        console.print(
+            f"\n[dim]⚡ {result.provider} · {result.steps} steps · "
+            f"{result.tool_calls_made} tool calls · "
+            f"{result.tokens_in}→{result.tokens_out} tokens · {result.latency_ms}ms[/dim]"
+        )
+        if result.files_changed:
+            console.print(f"[dim]📝 Changed: {', '.join(result.files_changed)}[/dim]")
+        if not result.success:
+            console.print(f"[bold red]⚠ {result.error}[/bold red]")
+
+    asyncio.run(_run())
+
+
+@app.command(name="chat")
+def chat(
+    project: str = typer.Option("", "--project", "-p"),
+    repo: str = typer.Option(".", "--repo", "-r"),
+    max_steps: int = typer.Option(25, "--max-steps"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Auto-approve edits and shell commands"),
+):
+    """Interactive agent REPL — conversation persists across turns."""
+    project = project or _detect_project(repo)
+    emberforge   = _get_emberforge(project, repo, verbose=True)
+    agent_instance = emberforge.create_agent(
+        auto_approve=yes,
+        approver=None if yes else _interactive_approver,
+        max_steps=max_steps,
+    )
+
+    console.print(BANNER)
+    console.print("[dim]Agent REPL — type a task; 'reset' clears history; 'exit' quits.[/dim]\n")
+
+    async def _turn(task: str):
+        result = await emberforge.run_agent(prompt=task, agent=agent_instance)
+        console.print()
+        if "```" in result.content:
+            console.print(Markdown(result.content))
+        else:
+            console.print(result.content)
+        console.print(
+            f"[dim]⚡ {result.provider} · {result.steps} steps · "
+            f"{result.tool_calls_made} tool calls[/dim]"
+        )
+        if result.files_changed:
+            console.print(f"[dim]📝 Changed: {', '.join(result.files_changed)}[/dim]")
+
+    while True:
+        try:
+            task = console.input("[bold cyan]emberforge>[/bold cyan] ").strip()
+        except (EOFError, KeyboardInterrupt):
+            break
+        if not task:
+            continue
+        if task.lower() in ("exit", "quit"):
+            break
+        if task.lower() == "reset":
+            agent_instance.reset()
+            console.print("[dim]History cleared.[/dim]")
+            continue
+        asyncio.run(_turn(task))
+
+    console.print("[dim]bye 👋[/dim]")
+
+
 @app.command()
 def init():
-    """Setup FORGE — create ~/.forge/config.yaml interactively."""
+    """Setup EMBERFORGE — create ~/.emberforge/config.yaml interactively."""
     console.print(BANNER)
 
-    forge_home  = Path.home() / ".forge"
-    config_path = forge_home / "config.yaml"
+    emberforge_home  = Path.home() / ".emberforge"
+    config_path = emberforge_home / "config.yaml"
 
     if config_path.exists():
         overwrite = typer.confirm(
@@ -126,8 +224,8 @@ def init():
             console.print("[yellow]Keeping existing config.[/yellow]")
             return
 
-    forge_home.mkdir(exist_ok=True)
-    (forge_home / "skills").mkdir(exist_ok=True)
+    emberforge_home.mkdir(exist_ok=True)
+    (emberforge_home / "skills").mkdir(exist_ok=True)
 
     console.print("\n[bold]Let's configure your providers.[/bold]")
     console.print("[dim]Press Enter to skip any provider.[/dim]\n")
@@ -147,7 +245,7 @@ def init():
         if val.strip():
             keys[key_name] = val.strip()
 
-    template_path = Path(__file__).parent.parent / ".forge" / "config.yaml"
+    template_path = Path(__file__).parent.parent / ".emberforge" / "config.yaml"
     if template_path.exists():
         import yaml
         with open(template_path) as f:
@@ -163,7 +261,7 @@ def init():
             yaml.dump({"providers": {k: {"api_key": v} for k, v in keys.items()}}, f)
 
     console.print(f"\n[bold green]✅ Config saved to {config_path}[/bold green]")
-    console.print("[dim]Run [bold]forge status[/bold] to check provider health.[/dim]")
+    console.print("[dim]Run [bold]emberforge status[/bold] to check provider health.[/dim]")
 
 
 @app.command()
@@ -172,19 +270,19 @@ def status():
     console.print(BANNER)
 
     async def _check():
-        from forge.config.settings import load_config
-        from forge.providers import build_providers
+        from emberforge.config.settings import load_config
+        from emberforge.providers import build_providers
 
         try:
             config = load_config()
         except FileNotFoundError:
-            console.print("[red]No config found. Run [bold]forge init[/bold] first.[/red]")
+            console.print("[red]No config found. Run [bold]emberforge init[/bold] first.[/red]")
             raise typer.Exit(1)
 
         providers = build_providers(config)
 
         if not providers:
-            console.print("[yellow]No providers configured. Run [bold]forge init[/bold].[/yellow]")
+            console.print("[yellow]No providers configured. Run [bold]emberforge init[/bold].[/yellow]")
             return
 
         table = Table(box=box.ROUNDED, show_header=True, header_style="bold cyan")
@@ -224,16 +322,16 @@ def skills(
     search:  str = typer.Option("", "--search", "-s", help="Search skills"),
 ):
     """List all learned skills."""
-    from forge.config.settings import load_config
-    from forge.memory import ForgeMemory
+    from emberforge.config.settings import load_config
+    from emberforge.memory import EmberMemory
 
     try:
         config = load_config()
     except FileNotFoundError:
-        console.print("[red]Run forge init first.[/red]")
+        console.print("[red]Run emberforge init first.[/red]")
         raise typer.Exit(1)
 
-    memory = ForgeMemory(config.memory.path)
+    memory = EmberMemory(config.memory.path)
 
     if search:
         results = memory.search_skills(search, limit=10)
@@ -243,7 +341,7 @@ def skills(
         console.print("\n[bold]All learned skills:[/bold]\n")
 
     if not results:
-        console.print("[dim]No skills yet. Run some tasks and FORGE will learn.[/dim]")
+        console.print("[dim]No skills yet. Run some tasks and EMBERFORGE will learn.[/dim]")
         return
 
     table = Table(box=box.SIMPLE, show_header=True, header_style="bold")
@@ -268,23 +366,23 @@ def stats(
     project: str = typer.Option("", "--project", "-p"),
 ):
     """Show lifetime token stats and savings."""
-    from forge.config.settings import load_config
-    from forge.memory import ForgeMemory
+    from emberforge.config.settings import load_config
+    from emberforge.memory import EmberMemory
 
     try:
         config = load_config()
     except FileNotFoundError:
-        console.print("[red]Run forge init first.[/red]")
+        console.print("[red]Run emberforge init first.[/red]")
         raise typer.Exit(1)
 
-    memory = ForgeMemory(config.memory.path)
+    memory = EmberMemory(config.memory.path)
     s = memory.total_stats()
 
     if not s or not s.get("calls"):
         console.print("[dim]No sessions recorded yet.[/dim]")
         return
 
-    console.print("\n[bold cyan]FORGE Lifetime Stats[/bold cyan]\n")
+    console.print("\n[bold cyan]EMBERFORGE Lifetime Stats[/bold cyan]\n")
 
     table = Table(box=box.SIMPLE, show_header=False)
     table.add_column("Metric", style="dim")
@@ -309,8 +407,8 @@ def learn(
     project = project or _detect_project(repo)
 
     async def _learn():
-        forge = _get_forge(project, repo, verbose=True)
-        recent = forge._memory.recent_sessions(project, limit=10)
+        emberforge = _get_emberforge(project, repo, verbose=True)
+        recent = emberforge._memory.recent_sessions(project, limit=10)
 
         if not recent:
             console.print("[yellow]No sessions to learn from yet.[/yellow]")
@@ -323,12 +421,12 @@ def learn(
 
         generated = 0
         for task_type, sessions in by_type.items():
-            forge._skills._tool_call_count = 999
-            skill = await forge._skills.maybe_generate(
+            emberforge._skills._tool_call_count = 999
+            skill = await emberforge._skills.maybe_generate(
                 project=project,
                 task_type=task_type,
                 sessions=sessions,
-                router=forge._router,
+                router=emberforge._router,
             )
             if skill:
                 console.print(f"[green]✨ Skill: '{skill.title}'[/green]")
@@ -340,15 +438,26 @@ def learn(
 
 
 @app.command()
+def bench():
+    """Run the compression benchmark — measured token savings, written to benchmarks/RESULTS.md."""
+    try:
+        from benchmarks.compression_bench import main as bench_main
+    except ImportError:
+        console.print("[red]Benchmark module not found — run from the EMBERFORGE repo root.[/red]")
+        raise typer.Exit(1)
+    bench_main()
+
+
+@app.command()
 def providers():
     """List all configured providers with their tier and models."""
-    from forge.config.settings import load_config
-    from forge.providers import build_providers
+    from emberforge.config.settings import load_config
+    from emberforge.providers import build_providers
 
     try:
         config = load_config()
     except FileNotFoundError:
-        console.print("[red]Run forge init first.[/red]")
+        console.print("[red]Run emberforge init first.[/red]")
         raise typer.Exit(1)
 
     all_providers = build_providers(config)
@@ -385,7 +494,7 @@ def providers():
 
     console.print(f"\n[bold]{len(all_providers)} configured · {len(unconfigured)} missing keys[/bold]\n")
     console.print(table)
-    console.print(f"\n[dim]Edit keys: [bold]~/.forge/config.yaml[/bold][/dim]")
+    console.print(f"\n[dim]Edit keys: [bold]~/.emberforge/config.yaml[/bold][/dim]")
 
 
 if __name__ == "__main__":

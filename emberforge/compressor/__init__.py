@@ -1,5 +1,5 @@
 """
-FORGE Compressor — content-aware token compression pipeline.
+EMBERFORGE Compressor — content-aware token compression pipeline.
 Inspired by Headroom's CCR, Claw-Compactor's Fusion Pipeline, LeanCTX's read modes.
 """
 from __future__ import annotations
@@ -7,8 +7,10 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from forge.compressor.shell import ShellCompressor, CompressResult
-from forge.compressor.ast_compress import ASTCompressor, ASTResult
+from emberforge.compressor.shell import ShellCompressor, CompressResult
+from emberforge.compressor.ast_compress import ASTCompressor, ASTResult
+from emberforge.compressor.polyglot import PolyglotCompressor
+from emberforge.compressor.tokens import count_tokens
 
 
 @dataclass
@@ -29,12 +31,12 @@ class PipelineResult:
         return self.original_tokens - self.final_tokens
 
 
-# Rough token estimator (4 chars ≈ 1 token)
+# Accurate token counting (tiktoken when available, chars/4 fallback)
 def _est_tokens(text: str) -> int:
-    return max(1, len(text) // 4)
+    return count_tokens(text)
 
 
-class ForgeCompressor:
+class EmberCompressor:
     """
     Main compression pipeline. Chains stages in order:
       1. Shell output compression (git/pip/npm/pytest)
@@ -44,15 +46,16 @@ class ForgeCompressor:
       5. Generic blank-line collapse
 
     Usage:
-        compressor = ForgeCompressor()
+        compressor = EmberCompressor()
         result = compressor.compress(text, content_type="auto")
         print(result.final_text)
         print(f"Saved {result.reduction_pct}% tokens")
     """
 
     def __init__(self) -> None:
-        self._shell = ShellCompressor()
-        self._ast   = ASTCompressor()
+        self._shell    = ShellCompressor()
+        self._ast      = ASTCompressor()
+        self._polyglot = PolyglotCompressor()
 
         # Simhash cache for deduplication
         self._seen_hashes: set[int] = set()
@@ -79,13 +82,17 @@ class ForgeCompressor:
             current = result.compressed
             stages.append(f"shell({result.reduction_pct}%)")
 
-        # Stage 2: Code → AST signatures
-        elif detected == "code":
-            lang = filename.split(".")[-1] if filename else "py"
+        # Stage 2: Code → signatures (Python AST; JS/TS/Go/Rust/Java via polyglot)
+        elif detected == "code" and mode != "full":
+            lang = filename.split(".")[-1].lower() if filename else "py"
             if lang == "py":
                 result = self._ast.compress(current, mode=mode, filename=filename or "code.py")
                 current = result.compressed
                 stages.append(f"ast({result.reduction_pct}%)")
+            elif self._polyglot.supports(filename):
+                p_result = self._polyglot.compress(current, filename)
+                current = p_result.compressed
+                stages.append(f"polyglot-{p_result.language}({p_result.reduction_pct}%)")
 
         # Stage 3: JSON compression
         elif detected == "json":

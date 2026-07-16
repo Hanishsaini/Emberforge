@@ -1,5 +1,5 @@
 """
-FORGE Smart Router — the brain.
+EMBERFORGE Smart Router — the brain.
 Routes tasks to the right provider based on:
   - Task classification (type + min tier)
   - Provider health + quota
@@ -14,22 +14,22 @@ from dataclasses import dataclass
 
 from rich.console import Console
 
-from forge.providers.base import BaseProvider, ForgeResponse
-from forge.providers import get_providers_at_or_above_tier
-from forge.router.classifier import TaskClassifier, Classification
+from emberforge.providers.base import BaseProvider, EmberResponse
+from emberforge.providers import get_providers_at_or_above_tier
+from emberforge.router.classifier import TaskClassifier, Classification
 
 console = Console()
 
 
 @dataclass
 class RouterResult:
-    response:       ForgeResponse
+    response:       EmberResponse
     classification: Classification
     attempts:       int
     total_ms:       int
 
 
-class ForgeRouter:
+class EmberRouter:
     """
     Main routing engine. Algorithm:
 
@@ -83,8 +83,8 @@ class ForgeRouter:
         if not candidates:
             # No providers available — emergency fallback message
             return RouterResult(
-                response=ForgeResponse(
-                    content="❌ No providers available. Check your API keys in ~/.forge/config.yaml",
+                response=EmberResponse(
+                    content="❌ No providers available. Check your API keys in ~/.emberforge/config.yaml",
                     provider="none",
                     model="none",
                     success=False,
@@ -154,7 +154,7 @@ class ForgeRouter:
         # All providers failed
         total_ms = int((time.time() - t_start) * 1000)
         return RouterResult(
-            response=ForgeResponse(
+            response=EmberResponse(
                 content=f"All {attempts} providers failed. Last error: {last_error}",
                 provider="none",
                 model="none",
@@ -170,7 +170,7 @@ class ForgeRouter:
         self,
         classification: Classification,
         provider:        str,
-        response:        ForgeResponse,
+        response:        EmberResponse,
         attempts:        int,
         total_ms:        int,
     ) -> None:

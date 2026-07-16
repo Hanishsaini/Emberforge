@@ -1,13 +1,13 @@
-"""FORGE Provider Registry — builds all providers from config."""
+"""EMBERFORGE Provider Registry — builds all providers from config."""
 from __future__ import annotations
 
-from forge.config.settings import ForgeConfig, ProviderConfig
-from forge.providers.base import BaseProvider
-from forge.providers.openai_compat import OpenAICompatProvider
-from forge import TIER_ORDER
+from emberforge.config.settings import EmberConfig, ProviderConfig
+from emberforge.providers.base import BaseProvider
+from emberforge.providers.openai_compat import OpenAICompatProvider
+from emberforge import TIER_ORDER
 
 
-def build_providers(config: ForgeConfig) -> dict[str, BaseProvider]:
+def build_providers(config: EmberConfig) -> dict[str, BaseProvider]:
     providers: dict[str, BaseProvider] = {}
     for name, cfg in config.providers.items():
         if not cfg.enabled:

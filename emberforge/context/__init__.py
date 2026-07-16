@@ -1,5 +1,5 @@
 """
-FORGE Context Engine
+EMBERFORGE Context Engine
 Retrieves relevant codebase context before sending to LLM.
 Signature-mode reads (LeanCTX-inspired): full file → signatures only → 13 tokens per re-read.
 Falls back to simple file reading if CodeLore not installed.
@@ -11,7 +11,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from forge.compressor import ForgeCompressor, PipelineResult
+from emberforge.compressor import EmberCompressor, PipelineResult
 
 
 @dataclass
@@ -38,7 +38,7 @@ CODE_EXTENSIONS = {
 }
 
 
-class ForgeContext:
+class EmberContext:
     """
     Codebase context engine. Two modes:
     1. CodeLore mode (if installed): BM25+RRF retrieval — gets RELEVANT files only
@@ -49,11 +49,11 @@ class ForgeContext:
         self,
         repo_path:   str | Path = ".",
         max_tokens:  int        = 4000,
-        compressor:  ForgeCompressor | None = None,
+        compressor:  EmberCompressor | None = None,
     ):
         self.repo_path  = Path(repo_path).resolve()
         self.max_tokens = max_tokens
-        self._compressor = compressor or ForgeCompressor()
+        self._compressor = compressor or EmberCompressor()
         self._codelore   = self._try_import_codelore()
 
         # Signature cache: path → (mtime, compressed_content)

@@ -1,5 +1,5 @@
 """
-FORGE Memory — SQLite-backed persistent session memory.
+EMBERFORGE Memory — SQLite-backed persistent session memory.
 Inspired by Hanish OS memory layer + Hermes post-task skill generation.
 
 Stores:
@@ -102,13 +102,13 @@ class Skill:
     project:   str   = "global"
 
 
-class ForgeMemory:
+class EmberMemory:
     """
-    Persistent memory backend for FORGE.
+    Persistent memory backend for EMBERFORGE.
     SQLite with FTS5 for skill search.
     """
 
-    def __init__(self, db_path: str | Path = "~/.forge/memory.db"):
+    def __init__(self, db_path: str | Path = "~/.emberforge/memory.db"):
         self.db_path = Path(db_path).expanduser()
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(str(self.db_path), check_same_thread=False)

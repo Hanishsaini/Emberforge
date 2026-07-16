@@ -1,7 +1,7 @@
 """Unit tests for task classifier."""
 import pytest
-from forge.router.classifier import TaskClassifier
-from forge import (
+from emberforge.router.classifier import TaskClassifier
+from emberforge import (
     TASK_DEBUG, TASK_TEST, TASK_ARCHITECTURE,
     TASK_RESEARCH, TASK_REFACTOR, TASK_WRITE,
     TASK_EXPLAIN, TASK_AUTOCOMPLETE,

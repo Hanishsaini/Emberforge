@@ -1,7 +1,7 @@
 """
-FORGE Core Orchestrator
+EMBERFORGE Core Orchestrator
 Wires: Compressor → Context → Router → Memory → Skills
-Single entry point for all FORGE operations.
+Single entry point for all EMBERFORGE operations.
 """
 from __future__ import annotations
 
@@ -9,18 +9,20 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from forge.compressor import ForgeCompressor
-from forge.config.settings import load_config, ensure_forge_home, ForgeConfig
-from forge.context import ForgeContext
-from forge.memory import ForgeMemory, SessionRecord
-from forge.providers import build_providers
-from forge.providers.base import BaseProvider
-from forge.router.router import ForgeRouter, RouterResult
-from forge.skills import SkillGenerator
+from emberforge.agent import AgentResult, EmberAgent
+from emberforge.compressor import EmberCompressor
+from emberforge.config.settings import load_config, ensure_emberforge_home, EmberConfig
+from emberforge.context import EmberContext
+from emberforge.memory import EmberMemory, SessionRecord
+from emberforge.providers import build_providers
+from emberforge.providers.base import BaseProvider
+from emberforge.router.router import EmberRouter, RouterResult
+from emberforge.skills import SkillGenerator
+from emberforge.tools import ApprovalCallback, EmberTools, ToolExecutor
 
 
 @dataclass
-class ForgeResult:
+class EmberResult:
     content:       str
     provider:      str
     model:         str
@@ -35,13 +37,13 @@ class ForgeResult:
     skill_generated: str | None = None
 
 
-class Forge:
+class Ember:
     """
-    Main FORGE class. Instantiate once per session.
+    Main EMBERFORGE class. Instantiate once per session.
 
     Usage:
-        forge = Forge(project="my-project")
-        result = await forge.run("refactor the retrieval pipeline")
+        emberforge = Ember(project="my-project")
+        result = await emberforge.run("refactor the retrieval pipeline")
         print(result.content)
     """
 
@@ -50,9 +52,9 @@ class Forge:
         project:   str          = "default",
         repo_path: str | Path   = ".",
         verbose:   bool         = True,
-        config:    ForgeConfig | None = None,
+        config:    EmberConfig | None = None,
     ):
-        ensure_forge_home()
+        ensure_emberforge_home()
         self.project   = project
         self.repo_path = Path(repo_path).resolve()
         self.verbose   = verbose
@@ -61,15 +63,15 @@ class Forge:
         self._config = config or load_config()
 
         # Boot all components
-        self._compressor = ForgeCompressor()
+        self._compressor = EmberCompressor()
         self._providers  = build_providers(self._config)
-        self._router     = ForgeRouter(self._providers, verbose=verbose)
-        self._context    = ForgeContext(
+        self._router     = EmberRouter(self._providers, verbose=verbose)
+        self._context    = EmberContext(
             repo_path=self.repo_path,
             max_tokens=self._config.compressor.max_context_tokens,
             compressor=self._compressor,
         )
-        self._memory = ForgeMemory(self._config.memory.path)
+        self._memory = EmberMemory(self._config.memory.path)
         self._skills = SkillGenerator(
             self._memory,
             threshold=self._config.memory.skill_threshold,
@@ -89,7 +91,7 @@ class Forge:
         context_mode:  str  = "signatures",
         max_tokens:    int  = 4096,
         system:        str  = "",
-    ) -> ForgeResult:
+    ) -> EmberResult:
         """
         Full pipeline:
         1. Search relevant skills → prepend to context
@@ -190,7 +192,7 @@ class Forge:
                     from rich.console import Console
                     Console().print(f"[dim green]  ✨ Skill generated: '{skill.title}'[/dim green]")
 
-        return ForgeResult(
+        return EmberResult(
             content=response.content,
             provider=response.provider,
             model=response.model,
@@ -204,6 +206,88 @@ class Forge:
             error=response.error,
             skill_generated=skill_generated,
         )
+
+    # ── Agent mode (Phase 1 harness) ──────────────────────────────────────────
+    def create_agent(
+        self,
+        auto_approve: bool = False,
+        approver:     ApprovalCallback | None = None,
+        max_steps:    int  = 25,
+        max_tokens:   int  = 4096,
+    ) -> EmberAgent:
+        """
+        Build a persistent agent (keeps conversation across .run() calls — used
+        by the chat REPL). For one-shot tasks use run_agent().
+        """
+        tools    = EmberTools(self.repo_path, compressor=self._compressor)
+        executor = ToolExecutor(tools, auto_approve=auto_approve, approver=approver)
+        return EmberAgent(
+            providers=self._providers,
+            executor=executor,
+            compressor=self._compressor,
+            max_steps=max_steps,
+            max_tokens=max_tokens,
+            verbose=self.verbose,
+        )
+
+    async def run_agent(
+        self,
+        prompt:       str,
+        auto_approve: bool = False,
+        approver:     ApprovalCallback | None = None,
+        max_steps:    int  = 25,
+        max_tokens:   int  = 4096,
+        agent:        EmberAgent | None = None,
+    ) -> AgentResult:
+        """
+        Agentic run: the model explores the repo, edits files, and runs commands
+        in a loop until the task is done. Skills are injected as context; the
+        session and per-tool-call counts feed the memory/skill engine.
+        """
+        agent = agent or self.create_agent(
+            auto_approve=auto_approve, approver=approver,
+            max_steps=max_steps, max_tokens=max_tokens,
+        )
+
+        # Inject relevant learned skills (same as one-shot path)
+        context = ""
+        relevant_skills = self._skills.find_relevant_skills(prompt)
+        if relevant_skills:
+            context = "\n\n".join(
+                f"## Relevant Skill: {s['title']}\n{s['content'][:500]}"
+                for s in relevant_skills
+            )
+
+        result = await agent.run(prompt, context=context)
+
+        # Feed the skill engine with REAL tool-call counts (not run counts)
+        for _ in range(max(result.tool_calls_made, 1)):
+            self._skills.record_tool_call()
+
+        # Persist session
+        if result.success:
+            session_id = self._memory.save_session(SessionRecord(
+                project=self.project,
+                task_type="agent",
+                prompt=prompt,
+                response=result.content,
+                provider=result.provider,
+                model=result.model,
+                tokens_in=result.tokens_in,
+                tokens_out=result.tokens_out,
+                tokens_saved=0,
+                latency_ms=result.latency_ms,
+                success=True,
+            ))
+            self._session_ids.append(session_id)
+        else:
+            self._memory.log_failure(
+                project=self.project,
+                prompt=prompt,
+                provider=result.provider or "agent",
+                error=result.error,
+            )
+        return result
 
     def session_stats(self) -> dict:
         """Stats for this session."""

@@ -1,5 +1,5 @@
 """
-FORGE AST Compressor (Claw-Compactor + Headroom inspired)
+EMBERFORGE AST Compressor (Claw-Compactor + Headroom inspired)
 Strips Python source to signatures + structure. Zero LLM cost. Reversible.
 60-70% token reduction on code files.
 

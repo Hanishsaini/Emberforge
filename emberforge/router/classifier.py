@@ -1,5 +1,5 @@
 """
-FORGE Task Classifier
+EMBERFORGE Task Classifier
 Determines task type + minimum tier required. Heuristic-first, router-as-judge later.
 """
 from __future__ import annotations
@@ -7,7 +7,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from forge import (
+from emberforge import (
     TASK_AUTOCOMPLETE, TASK_EXPLAIN, TASK_DEBUG,
     TASK_TEST, TASK_REFACTOR, TASK_WRITE,
     TASK_ARCHITECTURE, TASK_RESEARCH, TASK_REVIEW,

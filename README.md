@@ -1,17 +1,20 @@
 <div align="center">
 
 ```
-███████╗ ██████╗ ██████╗  ██████╗ ███████╗
-██╔════╝██╔═══██╗██╔══██╗██╔════╝ ██╔════╝
-█████╗  ██║   ██║██████╔╝██║  ███╗█████╗  
-██╔══╝  ██║   ██║██╔══██╗██║   ██║██╔══╝  
-██║     ╚██████╔╝██║  ██║╚██████╔╝███████╗
-╚═╝      ╚═════╝ ╚═╝  ╚═╝ ╚═════╝ ╚══════╝
+███████╗███╗   ███╗██████╗ ███████╗██████╗
+██╔════╝████╗ ████║██╔══██╗██╔════╝██╔══██╗
+█████╗  ██╔████╔██║██████╔╝█████╗  ██████╔╝
+██╔══╝  ██║╚██╔╝██║██╔══██╗██╔══╝  ██╔══██╗
+███████╗██║ ╚═╝ ██║██████╔╝███████╗██║  ██║
+╚══════╝╚═╝     ╚═╝╚═════╝ ╚══════╝╚═╝  ╚═╝
+        F  ·  O  ·  R  ·  G  ·  E
 ```
+
+# EmberForge
 
 **Free · Open-source · Routing & Generation Engine**
 
-A self-improving agentic coding harness. Built to replace Claude Code.
+A self-improving agentic coding harness. Built to make Claude Code–level capability free for everyone.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://python.org)
@@ -21,9 +24,9 @@ A self-improving agentic coding harness. Built to replace Claude Code.
 
 ---
 
-## What Is FORGE?
+## What Is EMBERFORGE?
 
-Claude Code costs $20+/month and hits rate limits constantly. FORGE is the engineering answer — a terminal-native coding harness that:
+Claude Code costs $20+/month and hits rate limits constantly. EMBERFORGE is the engineering answer — a terminal-native coding harness that:
 
 - **Routes intelligently** across 10+ free LLM providers (Groq, Gemini, NVIDIA NIM, OpenCode, Mistral, OpenRouter, Ollama)
 - **Compresses aggressively** — AST-aware code compression, shell output dedup, simhash deduplication. 60–92% fewer tokens per request
@@ -38,8 +41,8 @@ Zero cost. No subscriptions. No rate limit anxiety.
 ## Install
 
 ```bash
-pip install forge-ai
-forge init
+pip install emberforge
+emberforge init
 ```
 
 ---
@@ -48,19 +51,19 @@ forge init
 
 ```bash
 # 1. Install
-pip install forge-ai
+pip install emberforge
 
 # 2. Configure (interactive — paste your free API keys)
-forge init
+emberforge init
 
 # 3. Check providers
-forge status
+emberforge status
 
 # 4. Start building
-forge "refactor the retrieval pipeline in codelore"
-forge "why is my AST compressor failing on decorated functions"
-forge "write pytest tests for the memory module"
-forge "design the multi-tier routing architecture"
+emberforge "refactor the retrieval pipeline in codelore"
+emberforge "why is my AST compressor failing on decorated functions"
+emberforge "write pytest tests for the memory module"
+emberforge "design the multi-tier routing architecture"
 ```
 
 ---
@@ -82,10 +85,10 @@ forge "design the multi-tier routing architecture"
 ## How It Works
 
 ```
-forge "your task"
+emberforge "your task"
         ↓
 ┌──────────────────────────────────────────┐
-│              FORGE PIPELINE              │
+│              EMBERFORGE PIPELINE              │
 │                                          │
 │  1. Skill Lookup (FTS5)                  │
 │     → load relevant past learnings       │
@@ -119,25 +122,32 @@ forge "your task"
 ## Commands
 
 ```bash
-forge "task"              # run a task (auto-detects project)
-forge init                # setup wizard — configure API keys
-forge status              # provider health check
-forge providers           # list all providers + tiers
-forge skills              # list all learned skills
-forge skills --search "AST"  # search skills
-forge learn               # force skill generation from recent sessions
-forge stats               # lifetime token stats + savings
+emberforge agent "task"        # AGENT MODE: explores repo, edits files, runs tests in a loop
+emberforge chat                # interactive agent REPL (conversation persists)
+emberforge run "task"          # one-shot Q&A with codebase context
+emberforge init                # setup wizard — configure API keys
+emberforge status              # provider health check
+emberforge providers           # list all providers + tiers
+emberforge skills              # list all learned skills
+emberforge skills --search "AST"  # search skills
+emberforge learn               # force skill generation from recent sessions
+emberforge stats               # lifetime token stats + savings
+emberforge bench               # run the compression benchmark (measured numbers)
 ```
+
+Agent mode gates every file edit and shell command behind a y/n approval with
+a diff preview — pass `--yes` to auto-approve. Destructive commands
+(`rm -rf /`, force-push, `git reset --hard`) are blocked outright.
 
 ### Flags
 
 ```bash
-forge "task" --project myapp     # specify project
-forge "task" --repo /path/to/repo # specify repo path
-forge "task" --no-context        # skip codebase context
-forge "task" --full              # use full files (no compression)
-forge "task" --quiet             # hide routing logs
-forge "task" --max-tokens 8192   # override token limit
+emberforge "task" --project myapp     # specify project
+emberforge "task" --repo /path/to/repo # specify repo path
+emberforge "task" --no-context        # skip codebase context
+emberforge "task" --full              # use full files (no compression)
+emberforge "task" --quiet             # hide routing logs
+emberforge "task" --max-tokens 8192   # override token limit
 ```
 
 ---
@@ -145,17 +155,17 @@ forge "task" --max-tokens 8192   # override token limit
 ## Architecture
 
 ```
-forge/
+emberforge/
 ├── cli.py              # Typer CLI — all commands
-├── core.py             # Forge orchestrator — wires everything
+├── core.py             # Ember orchestrator — wires everything
 ├── providers/
-│   ├── base.py         # BaseProvider + ForgeResponse + ProviderHealth
+│   ├── base.py         # BaseProvider + EmberResponse + ProviderHealth
 │   └── openai_compat.py # Single class for all OpenAI-compat APIs
 ├── router/
 │   ├── classifier.py   # Task type + tier classification
 │   └── router.py       # Smart multi-provider routing with fallback
 ├── compressor/
-│   ├── __init__.py     # ForgeCompressor pipeline
+│   ├── __init__.py     # EmberCompressor pipeline
 │   ├── shell.py        # Git/pip/npm/pytest output compression
 │   └── ast_compress.py # Python AST signature extraction
 ├── context/
@@ -168,21 +178,28 @@ forge/
 
 ---
 
-## Token Savings (Real Numbers)
+## Token Savings (Measured, Not Estimated)
 
-| Content Type | Before | After | Reduction |
-|---|---|---|---|
-| Python file (full → signatures) | 2,000 tokens | 200 tokens | **90%** |
-| `git status` output | 800 tokens | 120 tokens | **85%** |
-| `pip install` dump | 3,000 tokens | 200 tokens | **93%** |
-| JSON array (50 items) | 1,500 tokens | 300 tokens | **80%** |
-| Re-reading a cached file | 2,000 tokens | 13 tokens | **99%** |
+Produced by the real pipeline with exact tiktoken counts. Reproduce with `emberforge bench`.
+
+| Content | Tokens before | Tokens after | Reduction |
+|---|---:|---:|---:|
+| Python → signatures (21 files, this repo) | 34,699 | 6,887 | **80.2%** |
+| `git log --stat -n 15` (live) | 424 | 80 | **81.1%** |
+| `pytest -v` output, 80 tests | 1,617 | 113 | **93.0%** |
+| `pip install` dump | 1,416 | 201 | **85.8%** |
+| JSON array, 50 items | 2,552 | 278 | **89.1%** |
+| TypeScript → signatures | 1,017 | 292 | **71.3%** |
+| Go → signatures | 684 | 252 | **63.2%** |
+| Agent re-read of unchanged file (read cache) | 2,168 | 30 | **98.6%** |
+
+Full report: [benchmarks/RESULTS.md](benchmarks/RESULTS.md)
 
 ---
 
 ## Inspiration & Credits
 
-FORGE is built on ideas from:
+EMBERFORGE is built on ideas from:
 - **[Headroom](https://github.com/headroomlabs-ai/headroom)** — CacheAligner, ContentRouter, reversible CCR
 - **[LeanCTX](https://github.com/leanctx/leanctx)** — Signature mode, 10 read modes, shell pattern compression
 - **[Claw-Compactor](https://github.com/openclaw/claw-compactor)** — 14-stage Fusion Pipeline, simhash dedup
@@ -193,13 +210,13 @@ FORGE is built on ideas from:
 
 ## Roadmap
 
-- [ ] `forge learn` — GEPA failure analysis (why did this fail, not just that it failed)
+- [ ] `emberforge learn` — GEPA failure analysis (why did this fail, not just that it failed)
 - [ ] Router-as-judge — Ollama qwen:7b classifies tasks instead of heuristics
-- [ ] AHE evolution loop — FORGE improves its own system prompts from traces
+- [ ] AHE evolution loop — EMBERFORGE improves its own system prompts from traces
 - [ ] CodeLore deep integration — full BM25+RRF retrieval
 - [ ] Hanish OS memory wiring — cross-project persistent context
 - [ ] Multi-file edit mode — Claude Code-style file diffing
-- [ ] MCP server support — use FORGE as an MCP provider
+- [ ] MCP server support — use EMBERFORGE as an MCP provider
 
 ---
 

@@ -1,8 +1,8 @@
-"""Unit tests for FORGE memory layer."""
+"""Unit tests for EMBERFORGE memory layer."""
 import pytest
 import tempfile
 from pathlib import Path
-from forge.memory import ForgeMemory, SessionRecord, Skill
+from emberforge.memory import EmberMemory, SessionRecord, Skill
 
 
 @pytest.fixture
@@ -10,7 +10,7 @@ def mem():
     """Create a temp memory DB for each test."""
     with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
         db_path = f.name
-    m = ForgeMemory(db_path)
+    m = EmberMemory(db_path)
     yield m
     # Windows fix: close connection before deleting
     m._conn.close()
@@ -22,7 +22,7 @@ def mem():
         pass  # Windows sometimes holds the file — acceptable in CI
 
 
-class TestForgeMemory:
+class TestEmberMemory:
     def test_save_and_retrieve_session(self, mem):
         record = SessionRecord(
             project="test-proj",

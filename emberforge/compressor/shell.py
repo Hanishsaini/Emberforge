@@ -1,5 +1,5 @@
 """
-FORGE Shell Output Compressor (LeanCTX-inspired)
+EMBERFORGE Shell Output Compressor (LeanCTX-inspired)
 Compresses git, npm, pip, cargo, pytest dumps before they hit the LLM.
 Real numbers: git status 800 tokens → 120. pip install dump 3000 → 200.
 """
@@ -33,6 +33,10 @@ class ShellCompressor:
     _GIT_SHORT    = re.compile(r'\b[0-9a-f]{7,12}\b')
     _GIT_STATUS_CLEAN = re.compile(r'nothing to commit.*working tree clean', re.DOTALL)
     _GIT_UNTRACKED    = re.compile(r'\?\? .+\n', re.MULTILINE)
+    # boilerplate hint lines: (use "git add <file>..." to update ...)
+    _GIT_HINT     = re.compile(r'^\s*\(use "git [^"]+"[^)\n]*\)\s*\n', re.MULTILINE)
+    # per-file stat lines in `git log --stat` / `git diff --stat`:  path | 12 ++--
+    _GIT_STAT     = re.compile(r'^\s*\S+\s*\|\s*\d+\s*[+-]*\s*$', re.MULTILINE)
 
     # ── Pip / npm patterns ────────────────────────────────────────────────────
     _PIP_ALREADY  = re.compile(r'Requirement already satisfied: .+(\n|$)', re.MULTILINE)
@@ -42,9 +46,13 @@ class ShellCompressor:
     _NPM_ADDED    = re.compile(r'added \d+ packages.*\n')
 
     # ── Pytest patterns ───────────────────────────────────────────────────────
-    _PYTEST_DOTS  = re.compile(r'^[.sxXF]+$', re.MULTILINE)
+    _PYTEST_DOTS  = re.compile(r'^[.sxXF]+(\s*\[\s*\d+%\])?$', re.MULTILINE)
     _PYTEST_PASS  = re.compile(r'(\d+) passed')
     _PYTEST_WARN  = re.compile(r'warnings summary.*?(?=PASSED|FAILED|ERROR|\Z)', re.DOTALL)
+    # verbose mode: tests/test_x.py::test_name PASSED   [ 42%]
+    _PYTEST_VERBOSE_PASS = re.compile(
+        r'^(?P<file>\S+?)::\S+\s+(?:PASSED|XPASS)\s*(?:\[\s*\d+%\])?\s*$'
+    )
 
     # ── Generic dedup ─────────────────────────────────────────────────────────
     _BLANK_LINES  = re.compile(r'\n{3,}')
@@ -94,6 +102,13 @@ class ShellCompressor:
         # Clean status shortcut
         if self._GIT_STATUS_CLEAN.search(text):
             return "git status: clean"
+        # Strip boilerplate hint lines — pure noise for an LLM
+        text = self._GIT_HINT.sub("", text)
+        # Collapse per-file stat lines (the "N files changed" summary stays)
+        stats = self._GIT_STAT.findall(text)
+        if len(stats) > 3:
+            text = self._GIT_STAT.sub("", text)
+            text += f"\n[{len(stats)} per-file stat lines collapsed]"
         # Collapse untracked file lists
         untracked = self._GIT_UNTRACKED.findall(text)
         if len(untracked) > 5:
@@ -129,7 +144,27 @@ class ShellCompressor:
             if f: parts.append(f"{f} FAILED")
             return " | ".join(parts) if parts else dots
         text = self._PYTEST_DOTS.sub(replace_dots, text)
-        return text
+
+        # Verbose mode: PASSED lines are noise, FAILED lines are signal.
+        # Collapse per-test PASSED lines into one summary per file; keep
+        # everything else (failures, errors, tracebacks) verbatim.
+        out: list[str] = []
+        passed_by_file: dict[str, int] = {}
+
+        def flush_passes() -> None:
+            for fname, n in passed_by_file.items():
+                out.append(f"{fname}: {n} passed")
+            passed_by_file.clear()
+
+        for line in text.splitlines():
+            m = self._PYTEST_VERBOSE_PASS.match(line.strip())
+            if m:
+                passed_by_file[m.group("file")] = passed_by_file.get(m.group("file"), 0) + 1
+            else:
+                flush_passes()
+                out.append(line)
+        flush_passes()
+        return "\n".join(out)
 
     def _compress_generic(self, text: str) -> str:
         # Collapse 3+ blank lines → 1

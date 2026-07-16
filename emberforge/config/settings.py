@@ -1,5 +1,5 @@
 """
-FORGE Settings — loads config.yaml, validates, exposes typed config.
+EMBERFORGE Settings — loads config.yaml, validates, exposes typed config.
 """
 from __future__ import annotations
 
@@ -12,12 +12,12 @@ from pydantic import BaseModel, Field
 
 
 # ── Config paths ──────────────────────────────────────────────────────────────
-FORGE_HOME      = Path.home() / ".forge"
-CONFIG_PATH     = FORGE_HOME / "config.yaml"
-LOCAL_CONFIG    = Path(".forge") / "config.yaml"   # project-level override
-MEMORY_DB       = FORGE_HOME / "memory.db"
-SKILLS_DIR      = FORGE_HOME / "skills"
-LOG_FILE        = FORGE_HOME / "forge.log"
+EMBERFORGE_HOME      = Path.home() / ".emberforge"
+CONFIG_PATH     = EMBERFORGE_HOME / "config.yaml"
+LOCAL_CONFIG    = Path(".emberforge") / "config.yaml"   # project-level override
+MEMORY_DB       = EMBERFORGE_HOME / "memory.db"
+SKILLS_DIR      = EMBERFORGE_HOME / "skills"
+LOG_FILE        = EMBERFORGE_HOME / "emberforge.log"
 
 
 # ── Pydantic models ───────────────────────────────────────────────────────────
@@ -58,7 +58,7 @@ class OutputConfig(BaseModel):
     show_cost_saved: bool = True
 
 
-class ForgeConfig(BaseModel):
+class EmberConfig(BaseModel):
     providers:  dict[str, ProviderConfig] = Field(default_factory=dict)
     routing:    dict[str, Any]            = Field(default_factory=dict)
     compressor: CompressorConfig          = Field(default_factory=CompressorConfig)
@@ -74,9 +74,9 @@ def _load_yaml(path: Path) -> dict:
         return yaml.safe_load(f) or {}
 
 
-def load_config() -> ForgeConfig:
+def load_config() -> EmberConfig:
     """
-    Priority: local .forge/config.yaml > ~/.forge/config.yaml > env vars
+    Priority: local .emberforge/config.yaml > ~/.emberforge/config.yaml > env vars
     """
     base   = _load_yaml(CONFIG_PATH)
     local  = _load_yaml(LOCAL_CONFIG)
@@ -84,10 +84,10 @@ def load_config() -> ForgeConfig:
     # Deep merge: local overrides base
     merged = _deep_merge(base, local)
 
-    # Env var overrides for API keys (FORGE_GROQ_KEY, FORGE_GEMINI_KEY, etc.)
+    # Env var overrides for API keys (EMBERFORGE_GROQ_KEY, EMBERFORGE_GEMINI_KEY, etc.)
     providers_raw = merged.get("providers", {})
     for name, cfg in providers_raw.items():
-        env_key = f"FORGE_{name.upper()}_KEY"
+        env_key = f"EMBERFORGE_{name.upper()}_KEY"
         if val := os.getenv(env_key):
             cfg["api_key"] = val
 
@@ -97,7 +97,7 @@ def load_config() -> ForgeConfig:
         for name, cfg in providers_raw.items()
     }
 
-    return ForgeConfig(
+    return EmberConfig(
         providers=providers,
         routing=merged.get("routing", {}),
         compressor=CompressorConfig(**merged.get("compressor", {})),
@@ -116,8 +116,8 @@ def _deep_merge(base: dict, override: dict) -> dict:
     return result
 
 
-def ensure_forge_home() -> None:
-    """Create ~/.forge directory structure if missing."""
-    FORGE_HOME.mkdir(exist_ok=True)
+def ensure_emberforge_home() -> None:
+    """Create ~/.emberforge directory structure if missing."""
+    EMBERFORGE_HOME.mkdir(exist_ok=True)
     SKILLS_DIR.mkdir(exist_ok=True)
     LOG_FILE.parent.mkdir(exist_ok=True)

@@ -1,5 +1,5 @@
 """
-FORGE BaseProvider — all providers inherit from this.
+EMBERFORGE BaseProvider — all providers inherit from this.
 """
 from __future__ import annotations
 
@@ -9,9 +9,17 @@ from dataclasses import dataclass, field
 from typing import AsyncGenerator
 
 
+# ── Tool call (OpenAI function-calling format) ────────────────────────────────
+@dataclass
+class ToolCall:
+    id:        str
+    name:      str
+    arguments: str   # raw JSON string, parsed by the tool executor
+
+
 # ── Response dataclass ────────────────────────────────────────────────────────
 @dataclass
-class ForgeResponse:
+class EmberResponse:
     content:        str
     provider:       str
     model:          str
@@ -22,6 +30,11 @@ class ForgeResponse:
     success:        bool = True
     error:          str  = ""
     quality_score:  float= 1.0   # 0-1, used by router for retry decisions
+    tool_calls:     list = field(default_factory=list)   # list[ToolCall]
+
+    @property
+    def has_tool_calls(self) -> bool:
+        return bool(self.tool_calls)
 
     @property
     def total_tokens(self) -> int:
@@ -68,11 +81,11 @@ class ProviderHealth:
 # ── Abstract base ─────────────────────────────────────────────────────────────
 class BaseProvider(ABC):
     """
-    All FORGE providers extend this.
+    All EMBERFORGE providers extend this.
     Providers are responsible for:
       - Calling the LLM API
       - Tracking health + quota
-      - Returning ForgeResponse
+      - Returning EmberResponse
     """
 
     def __init__(
@@ -82,7 +95,8 @@ class BaseProvider(ABC):
         tier:      str,
         models:    dict,
         base_url:  str,
-        rpm_limit: int = 20,
+        rpm_limit: int  = 20,
+        supports_tools: bool = True,
     ):
         self.name      = name
         self.api_key   = api_key
@@ -90,6 +104,8 @@ class BaseProvider(ABC):
         self.models    = models
         self.base_url  = base_url
         self.rpm_limit = rpm_limit
+        self.supports_tools = supports_tools   # native function calling; flips to
+                                               # False at runtime if the API rejects tools
         self.health    = ProviderHealth()
 
         # Rate limiting
@@ -104,14 +120,27 @@ class BaseProvider(ABC):
         system:     str    = "",
         max_tokens: int    = 4096,
         stream:     bool   = False,
-    ) -> ForgeResponse:
-        """Call the provider and return a ForgeResponse."""
+    ) -> EmberResponse:
+        """Call the provider and return a EmberResponse."""
         ...
 
     @abstractmethod
     async def health_check(self) -> bool:
         """Ping the provider. Return True if alive."""
         ...
+
+    # ── Multi-turn chat with tool calling (agent mode) ────────────────────────
+    async def chat(
+        self,
+        messages:   list[dict],
+        tools:      list[dict] | None = None,
+        max_tokens: int = 4096,
+    ) -> EmberResponse:
+        """
+        Full-message-list chat with optional OpenAI-format tool schemas.
+        Providers that support agent mode must override this.
+        """
+        raise NotImplementedError(f"{self.name} does not support chat()/agent mode")
 
     # ── Rate limiting ─────────────────────────────────────────────────────────
     def _check_rate_limit(self) -> bool:
