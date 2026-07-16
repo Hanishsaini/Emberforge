@@ -80,10 +80,33 @@ _PATTERNS: list[tuple[str, list[str]]] = [
 ]
 
 
+# ── Router-as-judge helpers (Phase 3) ─────────────────────────────────────────
+_VALID_TASK_TYPES = set(TASK_TIER_MAP)
+
+
+def build_judge_prompt(task_prompt: str) -> str:
+    """Prompt for a small local model to classify an ambiguous task."""
+    return (
+        "Classify this coding task into exactly ONE of these categories:\n"
+        f"{', '.join(sorted(_VALID_TASK_TYPES))}\n\n"
+        f"Task: {task_prompt[:400]}\n\n"
+        "Reply with the single category word only. No punctuation, no explanation."
+    )
+
+
+def parse_judge_output(text: str) -> str | None:
+    """Extract a valid task type from the judge's reply, else None."""
+    words = re.findall(r"[a-z]+", (text or "").lower())
+    for word in words:
+        if word in _VALID_TASK_TYPES:
+            return word
+    return None
+
+
 class TaskClassifier:
     """
-    Fast heuristic task classifier.
-    Phase 2: wire in Ollama qwen:7b as router-as-judge for ambiguous cases.
+    Fast heuristic task classifier. When confidence is low, the router escalates
+    to a local model via build_judge_prompt/parse_judge_output (router-as-judge).
     """
 
     def classify(self, prompt: str, context: str = "") -> Classification:

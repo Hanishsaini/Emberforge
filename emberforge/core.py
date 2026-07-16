@@ -91,6 +91,7 @@ class Ember:
         context_mode:  str  = "signatures",
         max_tokens:    int  = 4096,
         system:        str  = "",
+        on_token=None,
     ) -> EmberResult:
         """
         Full pipeline:
@@ -143,6 +144,7 @@ class Ember:
             context=final_context,
             system=system,
             max_tokens=max_tokens,
+            on_token=on_token,
         )
         self._skills.record_tool_call()
 

@@ -49,24 +49,52 @@ class EmberResponse:
 # ── Health state ─────────────────────────────────────────────────────────────
 @dataclass
 class ProviderHealth:
+    """
+    Cooldown-based health. Failures put a provider on a timed cooldown instead
+    of killing it permanently — quota resets, servers recover, and so do we.
+      - 429            → cooldown for Retry-After (or 60s default)
+      - 5xx / network  → short cooldown (30s)
+      - auth errors    → longer cooldown (300s — a bad key won't fix itself fast)
+      - repeated fails → exponential backoff, capped at 5 minutes
+    `healthy` remains as a display flag; availability is governed by cooldowns.
+    """
     healthy:          bool  = True
     quota_pct:        float = 100.0   # 0-100
     last_error:       str   = ""
     last_checked:     float = field(default_factory=time.time)
     consecutive_fails:int   = 0
     avg_latency_ms:   int   = 0
+    cooldown_until:   float = 0.0
+    cooldown_reason:  str   = ""
 
-    def mark_fail(self, error: str) -> None:
+    def start_cooldown(self, seconds: float, reason: str = "") -> None:
+        self.cooldown_until  = max(self.cooldown_until, time.time() + seconds)
+        self.cooldown_reason = reason[:120]
+
+    def in_cooldown(self) -> bool:
+        return time.time() < self.cooldown_until
+
+    def cooldown_remaining(self) -> int:
+        return max(0, int(self.cooldown_until - time.time()))
+
+    def mark_fail(self, error: str, cooldown_seconds: float | None = None) -> None:
         self.consecutive_fails += 1
         self.last_error = error
         self.last_checked = time.time()
-        if self.consecutive_fails >= 3:
-            self.healthy = False
+        self.healthy = self.consecutive_fails < 3
+        if cooldown_seconds is not None:
+            self.start_cooldown(cooldown_seconds, error)
+        elif self.consecutive_fails >= 3:
+            # exponential backoff: 30s, 60s, 120s, ... capped at 300s
+            backoff = min(300.0, 30.0 * (2 ** (self.consecutive_fails - 3)))
+            self.start_cooldown(backoff, f"{self.consecutive_fails} consecutive failures")
 
     def mark_success(self, latency_ms: int) -> None:
         self.consecutive_fails = 0
         self.healthy = True
         self.last_error = ""
+        self.cooldown_until = 0.0
+        self.cooldown_reason = ""
         self.last_checked = time.time()
         # Exponential moving average for latency
         if self.avg_latency_ms == 0:
@@ -155,8 +183,10 @@ class BaseProvider(ABC):
 
     # ── Availability check ────────────────────────────────────────────────────
     def is_available(self) -> bool:
+        # Cooldowns govern availability: once a cooldown expires the provider
+        # gets another chance, even after repeated failures (quota resets!).
         return (
-            self.health.healthy
+            not self.health.in_cooldown()
             and not self.health.quota_depleted()
             and self._check_rate_limit()
             and bool(self.api_key)

@@ -9,16 +9,41 @@ Routes tasks to the right provider based on:
 from __future__ import annotations
 
 import asyncio
+import re
 import time
 from dataclasses import dataclass
+from typing import Callable
 
 from rich.console import Console
 
+from emberforge import TIER_LOCAL
 from emberforge.providers.base import BaseProvider, EmberResponse
 from emberforge.providers import get_providers_at_or_above_tier
-from emberforge.router.classifier import TaskClassifier, Classification
+from emberforge.router.classifier import (
+    TaskClassifier, Classification, TASK_TIER_MAP,
+    build_judge_prompt, parse_judge_output,
+)
 
 console = Console()
+
+# Quality gates: things a "successful" HTTP 200 can still get wrong.
+_REFUSAL_RE = re.compile(
+    r"^(i can'?not|i can'?t|i'?m sorry|sorry, i|as an ai\b|i am unable|i'?m unable)",
+    re.IGNORECASE,
+)
+
+
+def quality_issue(content: str, task_type: str) -> str | None:
+    """Return a reason string if the response looks unusable, else None."""
+    stripped = content.strip()
+    if task_type != "autocomplete" and len(stripped) < 10:
+        return "empty or too short"
+    if _REFUSAL_RE.match(stripped):
+        return "model refused the task"
+    # An odd number of code fences means the output was cut off mid-block
+    if stripped.count("```") % 2 == 1:
+        return "truncated mid code-fence"
+    return None
 
 
 @dataclass
@@ -48,11 +73,57 @@ class EmberRouter:
         self,
         providers: dict[str, BaseProvider],
         verbose:   bool = True,
+        use_judge: bool = True,
     ):
         self._providers   = providers
         self._classifier  = TaskClassifier()
         self._verbose     = verbose
+        self._use_judge   = use_judge
         self._call_log:   list[dict] = []
+
+    def _judge_provider(self) -> BaseProvider | None:
+        """A local-tier provider (Ollama) used as router-as-judge — free & fast."""
+        for p in self._providers.values():
+            if p.tier == TIER_LOCAL and p.is_available():
+                return p
+        return None
+
+    async def _maybe_judge(
+        self, prompt: str, classification: Classification
+    ) -> Classification:
+        """
+        Router-as-judge: when the regex heuristics are unsure, ask a small local
+        model to classify. Any failure falls back to the heuristic silently.
+        """
+        if not self._use_judge or classification.confidence >= 0.6:
+            return classification
+        judge = self._judge_provider()
+        if judge is None:
+            return classification
+        try:
+            resp = await judge.complete(
+                prompt=build_judge_prompt(prompt),
+                system="You are a task classifier. Reply with exactly one word.",
+                max_tokens=8,
+            )
+            verdict = parse_judge_output(resp.content) if resp.success else None
+            if verdict and verdict != classification.task_type:
+                if self._verbose:
+                    console.print(
+                        f"[dim]  ⚖ judge ({judge.name}): "
+                        f"{classification.task_type} → {verdict}[/dim]"
+                    )
+                return Classification(
+                    task_type=verdict,
+                    min_tier=TASK_TIER_MAP[verdict],
+                    confidence=0.85,
+                    context_size=classification.context_size,
+                    reasoning=f"router-as-judge override (heuristic said "
+                              f"{classification.task_type}: {classification.reasoning})",
+                )
+        except Exception:
+            pass
+        return classification
 
     async def route(
         self,
@@ -60,13 +131,15 @@ class EmberRouter:
         context:    str  = "",
         system:     str  = "",
         max_tokens: int  = 4096,
+        on_token:   Callable[[str], None] | None = None,
     ) -> RouterResult:
         """Main entry. Classify → route → return."""
 
         t_start = time.time()
 
-        # Step 1: Classify
+        # Step 1: Classify (heuristics, escalated to a local judge if unsure)
         classification = self._classifier.classify(prompt, context)
+        classification = await self._maybe_judge(prompt, classification)
 
         if self._verbose:
             console.print(
@@ -105,12 +178,25 @@ class EmberRouter:
                 console.print(f"[dim]  Trying [bold]{provider.name}[/bold] ({provider.primary_model})...[/dim]")
 
             try:
-                response = await provider.complete(
-                    prompt=prompt,
-                    context=context,
-                    system=system,
-                    max_tokens=max_tokens,
-                )
+                if on_token is not None:
+                    try:
+                        response = await provider.complete(
+                            prompt=prompt, context=context, system=system,
+                            max_tokens=max_tokens, stream=True, on_token=on_token,
+                        )
+                    except TypeError:
+                        # provider doesn't support streaming — plain call
+                        response = await provider.complete(
+                            prompt=prompt, context=context, system=system,
+                            max_tokens=max_tokens,
+                        )
+                else:
+                    response = await provider.complete(
+                        prompt=prompt,
+                        context=context,
+                        system=system,
+                        max_tokens=max_tokens,
+                    )
             except Exception as e:
                 last_error = str(e)
                 provider.health.mark_fail(last_error)
@@ -124,13 +210,12 @@ class EmberRouter:
                     console.print(f"[dim red]  ✗ Failed: {last_error[:60]}[/dim red]")
                 continue
 
-            # Quality check: response too short for non-autocomplete = suspicious
-            if (
-                classification.task_type != "autocomplete"
-                and len(response.content.strip()) < 10
-            ):
+            # Quality check: HTTP 200 can still be unusable (refusal, truncation)
+            issue = quality_issue(response.content, classification.task_type)
+            if issue:
+                last_error = f"quality: {issue}"
                 if self._verbose:
-                    console.print(f"[dim yellow]  ⚠ Empty response, trying next...[/dim yellow]")
+                    console.print(f"[dim yellow]  ⚠ {issue} — trying next provider[/dim yellow]")
                 continue
 
             # ✅ Success

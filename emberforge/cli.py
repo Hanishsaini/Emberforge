@@ -55,16 +55,17 @@ def _detect_project(path: str) -> str:
     return p.name
 
 
-def _print_result(result, show_stats: bool = True) -> None:
+def _print_result(result, show_stats: bool = True, show_content: bool = True) -> None:
     if not result.success:
         console.print(f"\n[bold red]❌ Error:[/bold red] {result.error}")
         return
 
-    console.print()
-    if "```" in result.content:
-        console.print(Markdown(result.content))
-    else:
-        console.print(result.content)
+    if show_content:
+        console.print()
+        if "```" in result.content:
+            console.print(Markdown(result.content))
+        else:
+            console.print(result.content)
 
     if show_stats:
         console.print(
@@ -92,11 +93,18 @@ def run(
     max_tokens: int = typer.Option(4096, "--max-tokens", "-m"),
     quiet: bool = typer.Option(False, "--quiet", "-q", help="No routing logs"),
     system: str = typer.Option("", "--system", "-s", help="Custom system prompt"),
+    stream: bool = typer.Option(True, "--stream/--no-stream", help="Stream tokens as they arrive"),
 ):
     """Run a coding task."""
     project = project or _detect_project(repo)
     mode    = "full" if full else "signatures"
     emberforge   = _get_emberforge(project, repo, verbose=not quiet)
+
+    streamed = {"any": False}
+
+    def on_token(tok: str) -> None:
+        streamed["any"] = True
+        print(tok, end="", flush=True)
 
     async def _run():
         result = await emberforge.run(
@@ -105,8 +113,13 @@ def run(
             context_mode=mode,
             max_tokens=max_tokens,
             system=system,
+            on_token=on_token if stream else None,
         )
-        _print_result(result)
+        if streamed["any"] and result.success:
+            print()  # close the streamed output
+            _print_result(result, show_content=False)
+        else:
+            _print_result(result)
 
     asyncio.run(_run())
 
@@ -302,7 +315,13 @@ def status():
         for (name, provider), healthy in zip(providers.items(), checks):
             if isinstance(healthy, Exception):
                 healthy = False
-            status_str = "[green]✅ Online[/green]" if healthy else "[red]❌ Offline[/red]"
+            if provider.health.in_cooldown():
+                status_str = (f"[yellow]⏳ Cooldown {provider.health.cooldown_remaining()}s"
+                              f" ({provider.health.cooldown_reason[:30]})[/yellow]")
+            elif healthy:
+                status_str = "[green]✅ Online[/green]"
+            else:
+                status_str = "[red]❌ Offline[/red]"
             table.add_row(
                 name,
                 provider.tier,
