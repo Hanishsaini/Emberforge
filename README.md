@@ -12,69 +12,78 @@
 
 # EmberForge
 
-**Free · Open-source · Routing & Generation Engine**
-
-A self-improving agentic coding harness. Built to make Claude Code–level capability free for everyone.
+### An open-source coding agent that runs on free LLM tiers. <br> Claude Code–style workflow. $0/month.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://python.org)
-[![Tests](https://img.shields.io/badge/tests-169%20passing-green.svg)](tests/)
+[![Tests](https://img.shields.io/badge/tests-169%20passing-brightgreen.svg)](tests/)
+[![Version](https://img.shields.io/badge/version-0.3.0-orange.svg)](pyproject.toml)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-ff69b4.svg)](#contributing)
+
+**[Quickstart](#-quickstart)** · **[How it works](#-how-it-works)** · **[Measured savings](#-token-savings-measured-not-estimated)** · **[Roadmap](#-roadmap)**
 
 </div>
 
 ---
 
-## What Is EmberForge?
+Coding agents are the best thing to happen to developer productivity — and they cost $20+/month, which locks out students, hobbyists, and most of the world. **EmberForge is a terminal coding agent that reads your repo, edits files, and runs your tests in a loop — powered entirely by free LLM tiers** (Groq, Gemini, NVIDIA NIM, Mistral, OpenRouter, local Ollama). When one provider hits its quota, the conversation continues on the next. You never notice.
 
-Claude Code costs $20+/month and hits rate limits constantly. EmberForge is the engineering answer — a terminal-native coding **agent harness** that:
+```console
+$ emberforge agent "add input validation to the signup endpoint"
 
-- **Acts autonomously** — explores your repo, edits files, and runs tests in a loop; every edit and shell command is gated behind a diff-preview approval
-- **Routes intelligently** across 7 free LLM providers (Groq, Gemini, NVIDIA NIM, OpenCode Zen, Mistral, OpenRouter, local Ollama)
-- **Compresses measurably** — AST/signature code compression, shell output collapse, read caching. 63–98% fewer tokens, measured by `emberforge bench` (table below)
-- **Falls back and recovers** — 429s honor Retry-After, failing providers cool down and come back automatically, refusals and truncated replies rotate to the next provider
-- **Remembers and recalls** — decisions, sessions, and failure traces in SQLite are injected back into future runs, so the agent doesn't repeat known dead ends
-- **Learns skills** — after repeated successful sessions of the same task type, a deduplicated SKILL.md is generated and searched into future context
+→ Task: write | Tier: smart_free
+  step 1: groq (native tools)
+    ⚙ grep_search("signup")
+    ⚙ read_file("api/routes.py", mode="signatures")
+  step 3: groq
+    ⚙ edit_file("api/routes.py")        ← diff preview → you approve
+    ⚙ run_shell("pytest tests/ -q")
+    ✓ 12 passed
 
-Zero cost. No subscriptions. No rate limit anxiety.
+Added email + password validation to /signup, verified with tests.
+⚡ groq · 5 steps · 6 tool calls · 8,214→612 tokens · 📝 api/routes.py
+```
 
----
+## 🆚 Why EmberForge?
 
-## Install
+| | Claude Code | EmberForge |
+|---|---|---|
+| 💰 Price | $20+/month | **$0** |
+| 🧠 Models | Claude only | **7 free providers + local Ollama** |
+| 🚧 Rate limits | hard caps, "try again later" | **auto-rotates across quotas, cooldowns recover** |
+| 🔍 Source | closed | **MIT, ~4k lines, readable in an evening** |
+| 🎯 Maturity | polished product | v0.3 — young, moving fast, honest about it |
 
-Not on PyPI yet — install from source:
+EmberForge is not a Claude Code clone with a different API key — it's a bet that **aggressive context engineering + smart routing across many free tiers** can deliver real agentic coding without a subscription. The token math below is how the bet gets paid.
+
+## ✨ What you get
+
+- 🤖 **A real agent loop** — explore → edit → run tests → repeat, with a step budget. Every file edit shows you a diff and asks first (`--yes` to skip). Destructive commands (`rm -rf /`, force-push) are hard-blocked.
+- 🔀 **Smart routing** — tasks are classified (regex heuristics, escalating to a local Ollama judge when unsure) and sent to the cheapest tier that can handle them. 429s honor `Retry-After`; failing providers cool down and auto-recover; refusals and truncated replies rotate silently.
+- 🗜️ **Measured compression** — Python/TS/Go/Rust/Java files collapse to signatures, shell output keeps failures and drops noise, unchanged re-reads cost 30 tokens instead of 2,000. **63–98% fewer tokens, verified by `emberforge bench`.**
+- 🧠 **Memory that recalls** — decisions, sessions, and failure traces persist in SQLite and get injected into future runs, so the agent doesn't repeat known dead ends.
+- 📈 **Self-improving** — repeated successful sessions of the same task type generate searchable, deduplicated SKILL.md files that feed future context.
+- 💬 **Two more modes** — `emberforge chat` (persistent REPL) and `emberforge run` (streamed one-shot Q&A with compressed repo context).
+
+## 🚀 Quickstart
 
 ```bash
+# install (PyPI release coming — from source for now)
 git clone https://github.com/Hanishsaini/forge.git emberforge
-cd emberforge
-pip install -e .
-emberforge init
-```
+cd emberforge && pip install -e .
 
----
-
-## 60-Second Setup
-
-```bash
-# 1. Install (see above)
-
-# 2. Configure (interactive — paste your free API keys)
+# configure — paste any free API keys you have (one is enough to start)
 emberforge init
 
-# 3. Check providers
+# go
 emberforge status
-
-# 4. Start building
 emberforge agent "fix the failing tests in this repo"
-emberforge agent "add type hints to the parser module"
-emberforge run "why is my AST compressor failing on decorated functions"
-emberforge chat     # interactive agent session
+emberforge chat
 ```
 
----
+### Free API keys (all $0 tiers)
 
-## Free API Keys (All Free Tier)
-
-| Provider | Get Key | Tier | Best For |
+| Provider | Get a key | Tier | Best for |
 |---|---|---|---|
 | Groq | [console.groq.com/keys](https://console.groq.com/keys) | fast_free | Debug loops, quick fixes |
 | Gemini | [aistudio.google.com/apikey](https://aistudio.google.com/apikey) | smart_free | General coding |
@@ -82,15 +91,9 @@ emberforge chat     # interactive agent session
 | OpenCode Zen | [opencode.ai/auth](https://opencode.ai/auth) | smart_free | General coding |
 | Mistral | [console.mistral.ai](https://console.mistral.ai) | smart_free | Code generation |
 | OpenRouter | [openrouter.ai/keys](https://openrouter.ai/keys) | smart_free | Auto-rotating free models |
-| Ollama | (local, no key) | local | Autocomplete, simple tasks |
+| Ollama | local — no key | local | Task classification, autocomplete |
 
----
-
-## How It Works
-
-Two modes: `agent` (the harness — acts on your repo) and `run` (one-shot Q&A
-with compressed codebase context). Both share the same router, memory, and
-compression engine.
+## ⚙️ How it works
 
 ```
 emberforge agent "fix the failing tests"
@@ -122,81 +125,11 @@ memory: session saved, decisions logged,
 skills generated from repeated successes
 ```
 
----
+Models without native function calling fall back to a ReAct text protocol automatically — EmberForge detects the rejection at runtime and switches, mid-conversation.
 
-## Commands
+## 📊 Token savings (measured, not estimated)
 
-```bash
-emberforge agent "task"        # AGENT MODE: explores repo, edits files, runs tests in a loop
-emberforge chat                # interactive agent REPL (conversation persists)
-emberforge run "task"          # one-shot Q&A with codebase context
-emberforge init                # setup wizard — configure API keys
-emberforge status              # provider health check
-emberforge providers           # list all providers + tiers
-emberforge skills              # list all learned skills
-emberforge skills --search "AST"  # search skills
-emberforge learn               # force skill generation from recent sessions
-emberforge stats               # lifetime token stats + savings
-emberforge bench               # run the compression benchmark (measured numbers)
-```
-
-Agent mode gates every file edit and shell command behind a y/n approval with
-a diff preview — pass `--yes` to auto-approve. Destructive commands
-(`rm -rf /`, force-push, `git reset --hard`) are blocked outright.
-
-### Flags
-
-```bash
-emberforge agent "task" --yes           # auto-approve edits & shell commands
-emberforge agent "task" --max-steps 40  # raise the loop budget (default 25)
-emberforge run "task" --project myapp   # specify project
-emberforge run "task" --repo /path/to/repo
-emberforge run "task" --no-context      # skip codebase context
-emberforge run "task" --full            # full files (no compression)
-emberforge run "task" --no-stream       # disable token streaming
-emberforge run "task" --quiet           # hide routing logs
-emberforge run "task" --max-tokens 8192
-```
-
----
-
-## Architecture
-
-```
-emberforge/
-├── cli.py              # Typer CLI — all commands
-├── core.py             # Ember orchestrator — wires everything
-├── agent.py            # The harness loop: explore → act → verify, ReAct fallback
-├── tools/
-│   └── __init__.py     # read/write/edit/list/grep/shell + approval gates + read cache
-├── providers/
-│   ├── base.py         # BaseProvider + EmberResponse + cooldown-based health
-│   └── openai_compat.py # One class for all OpenAI-compat APIs, SSE streaming
-├── router/
-│   ├── classifier.py   # Heuristic classification + router-as-judge prompts
-│   └── router.py       # Tier routing, quality gates, silent fallback
-├── compressor/
-│   ├── __init__.py     # EmberCompressor pipeline
-│   ├── shell.py        # Git/pip/npm/pytest output compression
-│   ├── ast_compress.py # Python AST signature extraction
-│   ├── polyglot.py     # JS/TS/Go/Rust/Java signature extraction
-│   └── tokens.py       # Exact token counting (tiktoken, chars/4 fallback)
-├── context/
-│   └── __init__.py     # Codebase context engine (keyword-scored fallback)
-├── memory/
-│   └── __init__.py     # SQLite + FTS5: sessions, decisions, failures, recall
-└── skills/
-    └── __init__.py     # Gated + deduped post-task skill generation
-
-benchmarks/             # emberforge bench — the measured-numbers pipeline
-tests/                  # 169 tests: unit + 22 agent-loop workflow scenarios
-```
-
----
-
-## Token Savings (Measured, Not Estimated)
-
-Produced by the real pipeline with exact tiktoken counts. Reproduce with `emberforge bench`.
+Every number below is produced by the real pipeline with exact tiktoken counts — no marketing math. Reproduce with `emberforge bench`.
 
 | Content | Tokens before | Tokens after | Reduction |
 |---|---:|---:|---:|
@@ -209,40 +142,91 @@ Produced by the real pipeline with exact tiktoken counts. Reproduce with `emberf
 | Go → signatures | 684 | 252 | **63.2%** |
 | Agent re-read of unchanged file (read cache) | 2,168 | 30 | **98.6%** |
 
-Full report: [benchmarks/RESULTS.md](benchmarks/RESULTS.md)
+Full report: [benchmarks/RESULTS.md](benchmarks/RESULTS.md). Fun fact: the first run of this benchmark caught our own shell compressor doing **0%** on pytest output. We fixed it, then published the numbers. That's the standard here.
 
----
+## 🧰 Commands
 
-## Inspiration & Credits
+```bash
+emberforge agent "task"     # THE HARNESS: explore, edit, test in a loop
+emberforge chat             # interactive agent REPL (context persists)
+emberforge run "task"       # one-shot Q&A with compressed repo context
+emberforge init             # setup wizard — configure API keys
+emberforge status           # provider health + cooldowns
+emberforge bench            # run the compression benchmark yourself
+emberforge skills           # list learned skills (--search "AST")
+emberforge stats            # lifetime token stats + savings
+```
 
-EmberForge is built on ideas from:
-- **[Headroom](https://github.com/headroomlabs-ai/headroom)** — CacheAligner, ContentRouter, reversible CCR
-- **[LeanCTX](https://github.com/leanctx/leanctx)** — Signature mode, read modes, shell pattern compression
-- **[Claw-Compactor](https://github.com/openclaw/claw-compactor)** — Fusion Pipeline, simhash dedup
-- **[Hermes Agent](https://github.com/NousResearch/hermes)** — Post-task skill generation loop
-- **AHE (ICLR 2026)** — Agentic Harness Engineering, 7-component decomposition
+<details>
+<summary><b>All flags</b></summary>
 
----
+```bash
+emberforge agent "task" --yes           # auto-approve edits & shell commands
+emberforge agent "task" --max-steps 40  # raise the loop budget (default 25)
+emberforge run "task" --project myapp   # specify project
+emberforge run "task" --repo /path/to/repo
+emberforge run "task" --no-context      # skip codebase context
+emberforge run "task" --full            # full files (no compression)
+emberforge run "task" --no-stream       # disable token streaming
+emberforge run "task" --quiet           # hide routing logs
+emberforge run "task" --max-tokens 8192
+```
+</details>
 
-## Roadmap
+<details>
+<summary><b>Architecture</b> — ~4k lines, built to be read</summary>
 
-Done:
-- [x] Agent mode — multi-file edit loop with approval gates (v0.2)
-- [x] Router-as-judge — local model classifies tasks when heuristics are unsure (v0.3)
-- [x] Memory recall — decisions, sessions, and failure traces injected into runs (v0.3)
-- [x] Measured compression benchmark — `emberforge bench` (v0.2)
+```
+emberforge/
+├── cli.py              # Typer CLI — all commands
+├── core.py             # Ember orchestrator — wires everything
+├── agent.py            # The harness loop: explore → act → verify, ReAct fallback
+├── tools/              # read/write/edit/list/grep/shell + approval gates + read cache
+├── providers/
+│   ├── base.py         # BaseProvider + cooldown-based health
+│   └── openai_compat.py # One class for all OpenAI-compat APIs, SSE streaming
+├── router/
+│   ├── classifier.py   # Heuristic classification + router-as-judge prompts
+│   └── router.py       # Tier routing, quality gates, silent fallback
+├── compressor/
+│   ├── shell.py        # Git/pip/npm/pytest output compression
+│   ├── ast_compress.py # Python AST signature extraction
+│   ├── polyglot.py     # JS/TS/Go/Rust/Java signature extraction
+│   └── tokens.py       # Exact token counting (tiktoken, chars/4 fallback)
+├── context/            # Codebase context engine (keyword-scored)
+├── memory/             # SQLite + FTS5: sessions, decisions, failures, recall
+└── skills/             # Gated + deduped post-task skill generation
 
-Next:
-- [ ] PyPI release
-- [ ] Task-success eval suite — measure answer quality with/without compression, not just tokens
-- [ ] GEPA failure analysis — *why* did this fail, not just that it failed (failure recall shipped; analysis pending)
+benchmarks/             # emberforge bench — the measured-numbers pipeline
+tests/                  # 169 tests, incl. 22 agent-loop workflow scenarios
+```
+</details>
+
+## 🗺️ Roadmap
+
+**Shipped:** agent mode with approval gates (v0.2) · measured benchmark (v0.2) · cooldown routing + streaming + router-as-judge (v0.3) · memory recall + skill dedupe (v0.3)
+
+**Next:**
+- [ ] PyPI release (`pip install emberforge`)
+- [ ] Task-success eval suite — answer quality with/without compression, not just tokens
+- [ ] GEPA failure analysis — *why* did it fail, not just that it failed
 - [ ] AHE evolution loop — EmberForge improves its own system prompts from traces
-- [ ] BM25+RRF retrieval for codebase context (current: keyword scoring)
-- [ ] Cross-project persistent memory
-- [ ] MCP server support — use EmberForge as an MCP provider
+- [ ] BM25+RRF retrieval for codebase context
+- [ ] MCP server support
 
----
+## 🤝 Contributing
 
-## License
+EmberForge exists so people who can't pay $20/month still get a real coding agent. If that mission speaks to you:
 
-MIT — built by [Honey Stark](https://github.com/Hanishsaini)
+- ⭐ **Star the repo** — it's genuinely how people find this
+- 🐛 [Open an issue](https://github.com/Hanishsaini/forge/issues) — bug reports with `emberforge status` output are gold
+- 🔧 Pick anything on the roadmap — PRs welcome; every module has tests to copy from (`python -m pytest tests/ -q`)
+- 📣 Tell one person who's priced out of AI tooling
+
+## 🙏 Credits
+
+Built on ideas from [Headroom](https://github.com/headroomlabs-ai/headroom) (reversible compression), [LeanCTX](https://github.com/leanctx/leanctx) (signature reads), [Claw-Compactor](https://github.com/openclaw/claw-compactor) (fusion pipeline, simhash), [Hermes](https://github.com/NousResearch/hermes) (post-task skill generation), and AHE (ICLR 2026, agentic harness engineering).
+
+## 📄 License
+
+[MIT](LICENSE) — free, forever, like the tools it runs on. Built by [Honey Stark](https://github.com/Hanishsaini).
