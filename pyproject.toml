@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "emberforge"
-version = "0.2.0"
+version = "0.3.0"
 description = "Free, Open-source, Routing & Generation Engine — a self-improving agentic coding harness"
 readme = "README.md"
 license = { text = "MIT" }
