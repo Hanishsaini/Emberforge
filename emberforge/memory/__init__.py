@@ -11,6 +11,7 @@ Stores:
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 import time
 from dataclasses import dataclass, asdict
@@ -136,11 +137,67 @@ class EmberMemory:
         self, project: str = "default", limit: int = 10
     ) -> list[dict]:
         rows = self._conn.execute(
-            """SELECT task_type, prompt, response, provider, model, ts
+            """SELECT task_type, prompt, response, provider, model, success, ts
                FROM sessions WHERE project=? ORDER BY ts DESC LIMIT ?""",
             (project, limit),
         ).fetchall()
         return [dict(r) for r in rows]
+
+    # ── Recall (Phase 4): memory that reads, not just writes ─────────────────
+    def get_context_brief(
+        self, project: str, max_sessions: int = 5, max_chars: int = 1600
+    ) -> str:
+        """
+        Compact project memory injected at the start of a run: recent
+        architecture decisions + one-liners of recent successful sessions.
+        Empty string when there is nothing worth recalling.
+        """
+        parts: list[str] = []
+
+        proj = self.get_project(project)
+        decisions = (proj or {}).get("decisions") or ""
+        if decisions.strip():
+            last = decisions.strip().splitlines()[-5:]
+            parts.append("Recent decisions:\n" + "\n".join(f"- {d}" for d in last))
+
+        sessions = [
+            s for s in self.recent_sessions(project, limit=max_sessions * 2)
+            if s.get("success")
+        ][:max_sessions]
+        if sessions:
+            lines = [
+                f"- [{s['task_type']}] {' '.join(s['prompt'].split())[:90]}"
+                for s in sessions
+            ]
+            parts.append("Recent work in this project:\n" + "\n".join(lines))
+
+        brief = "\n\n".join(parts)
+        return brief[:max_chars]
+
+    def similar_failures(
+        self, prompt: str, project: str, limit: int = 3
+    ) -> list[dict]:
+        """
+        Past unfixed failures whose prompts share keywords with the new task —
+        so the agent is warned before repeating a known dead end.
+        """
+        keywords = {w.lower() for w in re.findall(r"[A-Za-z_]\w{2,}", prompt)}
+        if not keywords:
+            return []
+        rows = self._conn.execute(
+            """SELECT prompt, provider, error, analysis, ts
+               FROM failures WHERE project=? AND fixed=0
+               ORDER BY ts DESC LIMIT 50""",
+            (project,),
+        ).fetchall()
+        scored = []
+        for r in rows:
+            words = {w.lower() for w in re.findall(r"[A-Za-z_]\w{2,}", r["prompt"])}
+            overlap = len(keywords & words)
+            if overlap >= max(2, len(keywords) // 4):
+                scored.append((overlap, dict(r)))
+        scored.sort(key=lambda x: -x[0])
+        return [d for _, d in scored[:limit]]
 
     def session_count(self, project: str = "default") -> int:
         return self._conn.execute(
@@ -199,11 +256,26 @@ class EmberMemory:
         self._conn.commit()
         return cur.lastrowid
 
+    @staticmethod
+    def sanitize_fts_query(query: str) -> str:
+        """
+        FTS5 MATCH chokes on punctuation ('?', quotes, parens). Keep only
+        alphanumeric tokens, dedupe, cap at 8 terms, OR-join.
+        """
+        seen: list[str] = []
+        for tok in re.findall(r"[A-Za-z0-9_]{3,}", query):
+            low = tok.lower()
+            if low not in (s.lower() for s in seen):
+                seen.append(tok)
+            if len(seen) >= 8:
+                break
+        return " OR ".join(seen)
+
     def search_skills(self, query: str, limit: int = 3) -> list[dict]:
         """FTS5 full-text search over skills. Uses OR semantics for partial matches."""
-        # Convert "AST Python compression" → "AST OR Python OR compression"
-        terms = [t.strip() for t in query.split() if t.strip()]
-        fts_query = " OR ".join(terms) if terms else query
+        fts_query = self.sanitize_fts_query(query)
+        if not fts_query:
+            return []
 
         try:
             rows = self._conn.execute(
@@ -225,6 +297,26 @@ class EmberMemory:
                 (f"%{query}%", f"%{query}%", limit),
             ).fetchall()
             return [dict(r) for r in rows]
+
+    def find_similar_skill(self, title: str) -> dict | None:
+        """
+        Dedupe check before saving a new skill: a skill whose title shares
+        >= 60% of its words with `title` counts as the same skill.
+        """
+        new_words = {w.lower() for w in re.findall(r"[A-Za-z0-9_]{3,}", title)}
+        if not new_words:
+            return None
+        rows = self._conn.execute(
+            "SELECT id, title, task_type, content, use_count FROM skills"
+        ).fetchall()
+        for r in rows:
+            words = {w.lower() for w in re.findall(r"[A-Za-z0-9_]{3,}", r["title"])}
+            if not words:
+                continue
+            overlap = len(new_words & words) / max(len(new_words | words), 1)
+            if overlap >= 0.6:
+                return dict(r)
+        return None
 
     def increment_skill_use(self, skill_id: int) -> None:
         self._conn.execute(

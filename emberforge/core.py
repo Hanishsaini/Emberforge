@@ -117,6 +117,11 @@ class Ember:
                 from rich.console import Console
                 Console().print(f"[dim cyan]  ↑ Loaded {len(relevant_skills)} relevant skill(s)[/dim cyan]")
 
+        # ── Step 1b: Memory recall (Phase 4) ──────────────────────────────────
+        brief = self._memory.get_context_brief(self.project)
+        if brief:
+            context_parts.append(f"<memory>\n{brief}\n</memory>")
+
         # ── Step 2: Codebase context ───────────────────────────────────────────
         if use_context and self._providers:
             ctx_result = self._context.build_context(prompt, mode=context_mode)
@@ -251,16 +256,32 @@ class Ember:
             max_steps=max_steps, max_tokens=max_tokens,
         )
 
-        # Inject relevant learned skills (same as one-shot path)
-        context = ""
+        # Inject learned skills + project memory + failure warnings (Phase 4)
+        context_parts: list[str] = []
+
         relevant_skills = self._skills.find_relevant_skills(prompt)
         if relevant_skills:
-            context = "\n\n".join(
+            context_parts.append("\n\n".join(
                 f"## Relevant Skill: {s['title']}\n{s['content'][:500]}"
                 for s in relevant_skills
+            ))
+
+        brief = self._memory.get_context_brief(self.project)
+        if brief:
+            context_parts.append(f"<memory>\n{brief}\n</memory>")
+
+        past_failures = self._memory.similar_failures(prompt, self.project)
+        if past_failures:
+            warnings = "\n".join(
+                f"- \"{' '.join(f['prompt'].split())[:80]}\" failed with: {f['error'][:120]}"
+                for f in past_failures
+            )
+            context_parts.append(
+                "<past-failures>\nSimilar tasks failed before — avoid repeating "
+                f"these dead ends:\n{warnings}\n</past-failures>"
             )
 
-        result = await agent.run(prompt, context=context)
+        result = await agent.run(prompt, context="\n\n".join(context_parts))
 
         # Feed the skill engine with REAL tool-call counts (not run counts)
         for _ in range(max(result.tool_calls_made, 1)):
@@ -282,6 +303,13 @@ class Ember:
                 success=True,
             ))
             self._session_ids.append(session_id)
+            # Changed code = a decision worth remembering next session
+            if result.files_changed:
+                self._memory.log_decision(
+                    self.project,
+                    f"agent: {' '.join(prompt.split())[:100]} → changed "
+                    + ", ".join(result.files_changed[:5]),
+                )
         else:
             self._memory.log_failure(
                 project=self.project,

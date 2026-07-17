@@ -81,14 +81,21 @@ class SkillGenerator:
         if not self.should_generate():
             return None
 
-        if not sessions:
+        # Quality gate (Phase 4): only learn from SUCCESSFUL sessions of this
+        # task type, and only when there are enough of them to see a pattern.
+        usable = [
+            s for s in sessions
+            if s.get("success", 1) and s.get("task_type") == task_type
+        ]
+        if len(usable) < 3:
             return None
 
-        # Build context from recent sessions
+        # Rich input beats snippets: full prompts + generous response excerpts
         session_summary = "\n\n".join([
-            f"Task: {s['prompt'][:200]}\nResponse summary: {s['response'][:300]}"
-            for s in sessions[:5]
+            f"Task: {s['prompt'][:500]}\nResponse:\n{s['response'][:1500]}"
+            for s in usable[:5]
         ])
+        sessions = usable
 
         prompt = f"""Based on these {len(sessions)} coding sessions for task type '{task_type}',
 generate a reusable skill document.
@@ -127,6 +134,14 @@ JSON only. No preamble."""
 
             data = json.loads(content)
 
+            # Dedupe (Phase 4): a near-identical skill already exists → reuse
+            # it instead of minting a copy every 5 tool calls.
+            existing = self._memory.find_similar_skill(data["title"])
+            if existing:
+                self._memory.increment_skill_use(existing["id"])
+                self.reset_tool_calls()
+                return None
+
             skill_md = SKILL_TEMPLATE.format(
                 title=data["title"],
                 task_type=task_type,
@@ -154,5 +169,9 @@ JSON only. No preamble."""
             return None
 
     def find_relevant_skills(self, prompt: str) -> list[dict]:
-        """Search for skills relevant to current task."""
-        return self._memory.search_skills(prompt, limit=2)
+        """Search for skills relevant to the current task; bump their use count."""
+        skills = self._memory.search_skills(prompt, limit=2)
+        for s in skills:
+            if s.get("id"):
+                self._memory.increment_skill_use(s["id"])
+        return skills
