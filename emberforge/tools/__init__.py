@@ -181,9 +181,17 @@ TOOL_SCHEMAS: list[dict] = [
 class EmberTools:
     """All tool implementations, confined to repo_root."""
 
-    def __init__(self, repo_root: str | Path = ".", compressor: EmberCompressor | None = None):
+    def __init__(
+        self,
+        repo_root:  str | Path = ".",
+        compressor: EmberCompressor | None = None,
+        compress:   bool = True,
+    ):
         self.repo_root = Path(repo_root).resolve()
         self._compressor = compressor or EmberCompressor()
+        # Master switch for the eval suite's with/without-compression axis:
+        # False disables signature reads, shell compression, and the read cache.
+        self.compress = compress
         # Progressive disclosure: remember what we already sent the model.
         # (path, mode, start_line, max_lines) -> sha1 of file content at send time
         self._read_cache: dict[tuple, str] = {}
@@ -223,16 +231,19 @@ class EmberTools:
 
         source = p.read_text(encoding="utf-8", errors="ignore")
 
-        # Progressive disclosure: identical re-read of an unchanged file costs
-        # a one-line marker instead of the full content (it's already in context).
-        cache_key    = (path, mode, start_line, max_lines)
-        content_hash = hashlib.sha1(source.encode("utf-8", "ignore")).hexdigest()
-        if not force and self._read_cache.get(cache_key) == content_hash:
-            return ToolResult(
-                f"[cached] {path} is unchanged since you last read it — the "
-                "content is already in this conversation. Pass force=true to re-emit."
-            )
-        self._read_cache[cache_key] = content_hash
+        if not self.compress:
+            mode = "full"   # compression disabled: no signature reads, no cache
+        else:
+            # Progressive disclosure: identical re-read of an unchanged file costs
+            # a one-line marker instead of the full content (it's already in context).
+            cache_key    = (path, mode, start_line, max_lines)
+            content_hash = hashlib.sha1(source.encode("utf-8", "ignore")).hexdigest()
+            if not force and self._read_cache.get(cache_key) == content_hash:
+                return ToolResult(
+                    f"[cached] {path} is unchanged since you last read it — the "
+                    "content is already in this conversation. Pass force=true to re-emit."
+                )
+            self._read_cache[cache_key] = content_hash
 
         if mode == "signatures" and p.suffix == ".py":
             result = self._compressor.compress(
@@ -390,7 +401,7 @@ class EmberTools:
         raw = raw.strip() or "[no output]"
 
         # Compress verbose shell output (git/pip/pytest dumps) before the model sees it
-        if len(raw) > 1_500:
+        if self.compress and len(raw) > 1_500:
             compressed = self._compressor.compress(raw, content_type="shell")
             raw = compressed.final_text
 

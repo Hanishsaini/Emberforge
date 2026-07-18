@@ -456,6 +456,58 @@ def learn(
     asyncio.run(_learn())
 
 
+@app.command(name="eval")
+def eval_cmd(
+    task: str = typer.Option("", "--task", "-t", help="Run a single task by name"),
+    compare: bool = typer.Option(False, "--compare", help="Run twice: compressed vs full context"),
+    max_steps: int = typer.Option(15, "--max-steps"),
+    keep: bool = typer.Option(False, "--keep", help="Keep sandbox dirs for inspection"),
+    verbose: bool = typer.Option(False, "--verbose", "-v"),
+):
+    """Task-success evals: the agent must actually finish real tasks in sandbox repos."""
+    from emberforge.config.settings import load_config
+    from emberforge.providers import build_providers
+    from emberforge.evals import EvalRunner, render_markdown
+    from emberforge.evals.tasks import TASKS
+
+    config = load_config()
+    providers = build_providers(config)
+    if not providers:
+        console.print("[red]No providers configured — run [bold]emberforge init[/bold] first.[/red]")
+        raise typer.Exit(1)
+
+    async def _run():
+        scenarios = {"compressed": True, "full-context": False} if compare else {"compressed": True}
+        reports = {}
+        for label, compress in scenarios.items():
+            console.print(f"\n[bold cyan]Scenario: {label}[/bold cyan] "
+                          f"({len(TASKS) if not task else 1} task(s))")
+            runner = EvalRunner(providers, compress=compress, max_steps=max_steps,
+                                verbose=verbose, keep_sandboxes=keep)
+            report = await runner.run_all(only=task)
+            reports[label] = report
+
+            t = Table(box=box.ROUNDED, header_style="bold cyan")
+            for col in ("Task", "Passed", "Steps", "Tokens", "Time", "Provider"):
+                t.add_column(col)
+            for r in report.results:
+                t.add_row(
+                    r.task,
+                    "[green]✅[/green]" if r.passed else f"[red]❌ {r.error[:30]}[/red]",
+                    str(r.steps), f"{r.tokens_in + r.tokens_out:,}",
+                    f"{r.seconds}s", r.provider,
+                )
+            console.print(t)
+            console.print(f"[bold]Pass rate: {report.pass_rate:.0%}[/bold] · "
+                          f"tokens: {report.total_tokens:,}")
+
+        out = Path("evals_RESULTS.md")
+        out.write_text(render_markdown(reports), encoding="utf-8")
+        console.print(f"\n[dim]Report written to {out}[/dim]")
+
+    asyncio.run(_run())
+
+
 @app.command()
 def bench():
     """Run the compression benchmark — measured token savings, written to benchmarks/RESULTS.md."""
