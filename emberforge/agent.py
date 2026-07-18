@@ -92,6 +92,7 @@ class EmberAgent:
         min_tier:    str  = TIER_SMART_FREE,
         compact_threshold_tokens: int = 12_000,
         system_prompt: str | None = None,
+        mcp=None,   # optional MCPManager: external tools joining the loop
     ):
         self._providers  = providers
         self._executor   = executor
@@ -102,6 +103,7 @@ class EmberAgent:
         self.min_tier    = min_tier
         self.compact_threshold = compact_threshold_tokens
         self.system_prompt = system_prompt or AGENT_SYSTEM_PROMPT
+        self._mcp = mcp
 
         self.messages: list[dict] = []
         self._console = None
@@ -145,7 +147,11 @@ class EmberAgent:
 
                 use_native = provider.supports_tools
                 msgs = self._messages_for(provider, native=use_native)
-                tools = self._executor.schemas if use_native else None
+                if use_native:
+                    tools = self._executor.schemas + (
+                        self._mcp.schemas if self._mcp is not None else [])
+                else:
+                    tools = None
 
                 self._say(f"[dim]  step {step}: {provider.name} "
                           f"({'native tools' if use_native else 'ReAct'})[/dim]")
@@ -191,12 +197,12 @@ class EmberAgent:
             if last_provider.supports_tools and response.has_tool_calls:
                 self.messages.append(self._assistant_msg(response))
                 for tc in response.tool_calls:
-                    result = self._run_tool(tc.name, tc.arguments)
+                    output = await self._dispatch_tool(tc.name, tc.arguments)
                     tool_calls_made += 1
                     self.messages.append({
                         "role": "tool",
                         "tool_call_id": tc.id,
-                        "content": result.output,
+                        "content": output,
                         "_emberforge_meta": self._tool_meta(tc.name, tc.arguments),
                     })
                 continue
@@ -207,11 +213,11 @@ class EmberAgent:
                 if parsed is not None:
                     name, args = parsed
                     self.messages.append({"role": "assistant", "content": response.content})
-                    result = self._run_tool(name, json.dumps(args))
+                    output = await self._dispatch_tool(name, json.dumps(args))
                     tool_calls_made += 1
                     self.messages.append({
                         "role": "user",
-                        "content": f"TOOL RESULT ({name}):\n{result.output}",
+                        "content": f"TOOL RESULT ({name}):\n{output}",
                         "_emberforge_meta": self._tool_meta(name, json.dumps(args)),
                     })
                     continue
@@ -261,6 +267,17 @@ class EmberAgent:
             cands = [p for p in self._providers.values() if p.is_available()]
         return cands
 
+    async def _dispatch_tool(self, name: str, arguments: str) -> str:
+        """Route a tool call: external MCP tools vs local filesystem tools."""
+        if self._mcp is not None and self._mcp.owns(name):
+            self._say(f"[dim cyan]    ⚙ {name}({arguments[:80]}) [MCP][/dim cyan]")
+            output, ok = await self._mcp.call(name, arguments)
+            self._executor.record_external(name, arguments, output, ok)
+            icon = "✓" if ok else "✗"
+            self._say(f"[dim]    {icon} {(output.splitlines() or [''])[0][:100]}[/dim]")
+            return output
+        return self._run_tool(name, arguments).output
+
     def _run_tool(self, name: str, arguments: str) -> ToolResult:
         self._say(f"[dim cyan]    ⚙ {name}({arguments[:80]})[/dim cyan]")
         result = self._executor.execute(name, arguments)
@@ -303,10 +320,18 @@ class EmberAgent:
                 for m in self.messages
             ]
 
+        react_suffix = REACT_SUFFIX
+        if self._mcp is not None and self._mcp.schemas:
+            ext = "\n".join(
+                f"- {s['function']['name']}: {s['function']['description'][:100]}"
+                for s in self._mcp.schemas
+            )
+            react_suffix += f"\n\nEXTERNAL TOOLS (same ```tool protocol):\n{ext}"
+
         msgs: list[dict] = []
         for m in self.messages:
             if m["role"] == "system":
-                msgs.append({"role": "system", "content": m["content"] + REACT_SUFFIX})
+                msgs.append({"role": "system", "content": m["content"] + react_suffix})
             elif m["role"] == "tool":
                 msgs.append({"role": "user", "content": f"TOOL RESULT:\n{m['content']}"})
             elif m["role"] == "assistant" and m.get("tool_calls"):

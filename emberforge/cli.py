@@ -147,6 +147,22 @@ def agent(
     emberforge   = _get_emberforge(project, repo, verbose=not quiet)
 
     async def _run():
+        # External MCP tools (config: mcp_servers in ~/.emberforge/config.yaml)
+        mcp_manager = None
+        servers = {
+            n: {"command": c.command, "args": c.args}
+            for n, c in emberforge._config.mcp_servers.items()
+            if c.enabled and c.command
+        }
+        if servers:
+            from emberforge.mcp.client import MCPManager
+            mcp_manager = MCPManager(servers)
+            errors = await mcp_manager.connect()
+            for err in errors:
+                console.print(f"[yellow]⚠ MCP server failed: {err}[/yellow]")
+            if mcp_manager.connected and not quiet:
+                console.print(f"[dim]🔌 MCP: {', '.join(mcp_manager.connected)}[/dim]")
+
         plan_text = ""
         auto = yes
         if plan:
@@ -161,13 +177,18 @@ def agent(
                     return
                 auto = True   # one approval covers the whole plan
 
-        result = await emberforge.run_agent(
-            prompt=prompt,
-            auto_approve=auto,
-            approver=None if auto else _interactive_approver,
-            max_steps=max_steps,
-            plan=plan_text,
-        )
+        try:
+            result = await emberforge.run_agent(
+                prompt=prompt,
+                auto_approve=auto,
+                approver=None if auto else _interactive_approver,
+                max_steps=max_steps,
+                plan=plan_text,
+                mcp=mcp_manager,
+            )
+        finally:
+            if mcp_manager is not None:
+                await mcp_manager.close()
         console.print()
         if "```" in result.content:
             console.print(Markdown(result.content))
@@ -470,6 +491,15 @@ def learn(
         console.print(f"\n[bold green]{generated} skill(s) generated.[/bold green]")
 
     asyncio.run(_learn())
+
+
+@app.command(name="mcp-serve")
+def mcp_serve(
+    repo: str = typer.Option(".", "--repo", "-r", help="Default repository path"),
+):
+    """Expose EmberForge as an MCP server over stdio (for Claude Desktop, Cline, Goose, ...)."""
+    from emberforge.mcp.server import MCPServer, serve_stdio
+    asyncio.run(serve_stdio(MCPServer(repo)))
 
 
 @app.command()

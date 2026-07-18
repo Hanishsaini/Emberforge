@@ -476,6 +476,21 @@ class ToolExecutor:
         """Forward cache invalidation to the tool layer (used by the agent)."""
         self._tools.invalidate_read(path)
 
+    def record_external(self, tool: str, arguments: str | dict,
+                        output: str, success: bool) -> None:
+        """Record an externally-executed call (MCP) so traces stay complete."""
+        if isinstance(arguments, str):
+            try:
+                args = json.loads(arguments or "{}")
+            except json.JSONDecodeError:
+                args = {}
+        else:
+            args = dict(arguments)
+        self.history.append(ExecutionRecord(
+            tool=tool, args=args, success=success,
+            output_preview=(output or "")[:120],
+        ))
+
     def execute(self, name: str, arguments: str | dict) -> ToolResult:
         # Parse args
         if isinstance(arguments, str):

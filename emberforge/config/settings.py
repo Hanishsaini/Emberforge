@@ -41,6 +41,12 @@ class CompressorConfig(BaseModel):
     signature_cache_ttl: int  = 3600
 
 
+class McpServerConfig(BaseModel):
+    command: str  = ""
+    args:    list[str] = Field(default_factory=list)
+    enabled: bool = True
+
+
 class MemoryConfig(BaseModel):
     enabled:             bool = True
     backend:             str  = "sqlite"
@@ -59,11 +65,12 @@ class OutputConfig(BaseModel):
 
 
 class EmberConfig(BaseModel):
-    providers:  dict[str, ProviderConfig] = Field(default_factory=dict)
-    routing:    dict[str, Any]            = Field(default_factory=dict)
-    compressor: CompressorConfig          = Field(default_factory=CompressorConfig)
-    memory:     MemoryConfig              = Field(default_factory=MemoryConfig)
-    output:     OutputConfig              = Field(default_factory=OutputConfig)
+    providers:   dict[str, ProviderConfig]  = Field(default_factory=dict)
+    routing:     dict[str, Any]             = Field(default_factory=dict)
+    compressor:  CompressorConfig           = Field(default_factory=CompressorConfig)
+    memory:      MemoryConfig               = Field(default_factory=MemoryConfig)
+    output:      OutputConfig               = Field(default_factory=OutputConfig)
+    mcp_servers: dict[str, McpServerConfig] = Field(default_factory=dict)
 
 
 # ── Loader ────────────────────────────────────────────────────────────────────
@@ -91,9 +98,13 @@ def load_config() -> EmberConfig:
         if val := os.getenv(env_key):
             cfg["api_key"] = val
 
-    # Build typed config
+    # Build typed config. YAML parses empty values (api_key:) as None — drop
+    # them so pydantic defaults apply instead of failing validation.
+    def _clean(cfg: dict) -> dict:
+        return {k: v for k, v in (cfg or {}).items() if v is not None}
+
     providers = {
-        name: ProviderConfig(**cfg)
+        name: ProviderConfig(**_clean(cfg))
         for name, cfg in providers_raw.items()
     }
 
@@ -103,6 +114,10 @@ def load_config() -> EmberConfig:
         compressor=CompressorConfig(**merged.get("compressor", {})),
         memory=MemoryConfig(**merged.get("memory", {})),
         output=OutputConfig(**merged.get("output", {})),
+        mcp_servers={
+            name: McpServerConfig(**_clean(cfg))
+            for name, cfg in (merged.get("mcp_servers") or {}).items()
+        },
     )
 
 

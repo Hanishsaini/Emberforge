@@ -225,6 +225,7 @@ class Ember:
         approver:     ApprovalCallback | None = None,
         max_steps:    int  = 25,
         max_tokens:   int  = 4096,
+        mcp=None,
     ) -> EmberAgent:
         """
         Build a persistent agent (keeps conversation across .run() calls — used
@@ -245,6 +246,7 @@ class Ember:
             max_tokens=max_tokens,
             verbose=self.verbose,
             system_prompt=PromptStore().get_active(),   # evolved prompt, if promoted
+            mcp=mcp,
         )
 
     async def run_agent(
@@ -256,6 +258,7 @@ class Ember:
         max_tokens:   int  = 4096,
         agent:        EmberAgent | None = None,
         plan:         str  = "",
+        mcp=None,
     ) -> AgentResult:
         """
         Agentic run: the model explores the repo, edits files, and runs commands
@@ -264,7 +267,7 @@ class Ember:
         """
         agent = agent or self.create_agent(
             auto_approve=auto_approve, approver=approver,
-            max_steps=max_steps, max_tokens=max_tokens,
+            max_steps=max_steps, max_tokens=max_tokens, mcp=mcp,
         )
 
         # Inject memory + failure warnings; skills are LAZY (Pi-style, Phase 7):
