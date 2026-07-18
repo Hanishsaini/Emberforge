@@ -281,6 +281,15 @@ class Ember:
                 f"load_skill tool for full instructions:\n{lines}\n</skills-available>"
             )
 
+        # Repo map (Phase 9, Aider-inspired): structural orientation so the
+        # agent jumps to the right files instead of grepping blind.
+        repo_block = self._context.repo_map_block(prompt, token_budget=600)
+        if repo_block:
+            context_parts.append(
+                "<repo-map>\nMost relevant files for this task (ranked; "
+                f"symbols they define):\n{repo_block}\n</repo-map>"
+            )
+
         brief = self._memory.get_context_brief(self.project)
         if brief:
             context_parts.append(f"<memory>\n{brief}\n</memory>")
