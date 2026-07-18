@@ -67,12 +67,14 @@ class EvalRunner:
         max_steps: int  = 15,
         verbose:   bool = False,
         keep_sandboxes: bool = False,
+        system_prompt: str | None = None,   # scoring axis for the evolution loop
     ):
         self._providers = providers
         self.compress   = compress
         self.max_steps  = max_steps
         self.verbose    = verbose
         self.keep_sandboxes = keep_sandboxes
+        self.system_prompt  = system_prompt
 
     async def run_task(self, task: EvalTask) -> EvalResult:
         sandbox = Path(tempfile.mkdtemp(prefix=f"emberforge-eval-{task.name}-"))
@@ -83,6 +85,7 @@ class EvalRunner:
         agent    = EmberAgent(
             providers=self._providers, executor=executor,
             max_steps=self.max_steps, verbose=self.verbose,
+            system_prompt=self.system_prompt,
         )
 
         t0 = time.time()

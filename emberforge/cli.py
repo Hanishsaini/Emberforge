@@ -139,6 +139,7 @@ def agent(
     repo: str = typer.Option(".", "--repo", "-r"),
     max_steps: int = typer.Option(25, "--max-steps", help="Agent loop budget"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Auto-approve edits and shell commands"),
+    plan: bool = typer.Option(False, "--plan", help="Plan first: approve the plan once, then run without per-step prompts"),
     quiet: bool = typer.Option(False, "--quiet", "-q"),
 ):
     """Agentic run: EMBERFORGE explores the repo, edits files, runs commands in a loop."""
@@ -146,11 +147,26 @@ def agent(
     emberforge   = _get_emberforge(project, repo, verbose=not quiet)
 
     async def _run():
+        plan_text = ""
+        auto = yes
+        if plan:
+            plan_text = await emberforge.plan_task(prompt)
+            if not plan_text:
+                console.print("[yellow]Could not generate a plan — falling back to per-step approvals.[/yellow]")
+            else:
+                console.print("\n[bold cyan]Proposed plan:[/bold cyan]")
+                console.print(plan_text)
+                if not typer.confirm("\nApprove this plan? (agent will then run without per-step prompts)"):
+                    console.print("[yellow]Plan rejected — nothing was changed.[/yellow]")
+                    return
+                auto = True   # one approval covers the whole plan
+
         result = await emberforge.run_agent(
             prompt=prompt,
-            auto_approve=yes,
-            approver=None if yes else _interactive_approver,
+            auto_approve=auto,
+            approver=None if auto else _interactive_approver,
             max_steps=max_steps,
+            plan=plan_text,
         )
         console.print()
         if "```" in result.content:
@@ -454,6 +470,57 @@ def learn(
         console.print(f"\n[bold green]{generated} skill(s) generated.[/bold green]")
 
     asyncio.run(_learn())
+
+
+@app.command()
+def evolve(
+    project: str = typer.Option("", "--project", "-p"),
+    repo: str = typer.Option(".", "--repo", "-r"),
+    max_steps: int = typer.Option(12, "--max-steps", help="Agent budget per eval task"),
+):
+    """AHE loop: propose a better system prompt from failure post-mortems, score it on the eval suite, promote only if not worse."""
+    from emberforge.config.settings import load_config
+    from emberforge.providers import build_providers
+    from emberforge.evals import EvalRunner
+    from emberforge.evolve import PromptEvolver, PromptStore
+    from emberforge.memory import EmberMemory
+    from emberforge.router.router import EmberRouter
+
+    project = project or _detect_project(repo)
+    config = load_config()
+    providers = build_providers(config)
+    if not providers:
+        console.print("[red]No providers configured — run [bold]emberforge init[/bold] first.[/red]")
+        raise typer.Exit(1)
+
+    memory = EmberMemory(config.memory.path)
+    router = EmberRouter(providers, verbose=False)
+    store  = PromptStore()
+
+    async def scorer(prompt_text: str):
+        runner = EvalRunner(providers, system_prompt=prompt_text, max_steps=max_steps)
+        report = await runner.run_all()
+        return report.pass_rate, report.total_tokens
+
+    async def _run():
+        console.print("[bold cyan]AHE evolution loop[/bold cyan] — scoring current prompt, "
+                      "proposing a variant from failure post-mortems, scoring it…\n")
+        result = await PromptEvolver().evolve(scorer, router, memory, project, store)
+
+        t = Table(box=box.ROUNDED, header_style="bold cyan")
+        t.add_column(""); t.add_column("Pass rate", justify="right"); t.add_column("Tokens", justify="right")
+        t.add_row("current prompt", f"{result.baseline_pass:.0%}", f"{result.baseline_tokens:,}")
+        if result.variant:
+            t.add_row("variant", f"{result.variant_pass:.0%}", f"{result.variant_tokens:,}")
+        console.print(t)
+
+        if result.promoted:
+            console.print(f"\n[bold green]✅ Variant promoted[/bold green] ({result.reason}) "
+                          f"→ {store.active_path}")
+        else:
+            console.print(f"\n[yellow]Kept current prompt[/yellow] — {result.reason}")
+
+    asyncio.run(_run())
 
 
 @app.command()

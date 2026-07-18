@@ -91,6 +91,7 @@ class EmberAgent:
         verbose:     bool = True,
         min_tier:    str  = TIER_SMART_FREE,
         compact_threshold_tokens: int = 12_000,
+        system_prompt: str | None = None,
     ):
         self._providers  = providers
         self._executor   = executor
@@ -100,6 +101,7 @@ class EmberAgent:
         self.verbose     = verbose
         self.min_tier    = min_tier
         self.compact_threshold = compact_threshold_tokens
+        self.system_prompt = system_prompt or AGENT_SYSTEM_PROMPT
 
         self.messages: list[dict] = []
         self._console = None
@@ -113,7 +115,7 @@ class EmberAgent:
         t_start = time.time()
 
         if not self.messages:
-            self.messages.append({"role": "system", "content": AGENT_SYSTEM_PROMPT})
+            self.messages.append({"role": "system", "content": self.system_prompt})
 
         user_content = f"<context>\n{context}\n</context>\n\n{task}" if context else task
         self.messages.append({"role": "user", "content": user_content})

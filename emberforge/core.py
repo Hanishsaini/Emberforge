@@ -230,6 +230,8 @@ class Ember:
         Build a persistent agent (keeps conversation across .run() calls — used
         by the chat REPL). For one-shot tasks use run_agent().
         """
+        from emberforge.evolve import PromptStore
+
         tools    = EmberTools(self.repo_path, compressor=self._compressor)
         executor = ToolExecutor(
             tools, auto_approve=auto_approve, approver=approver,
@@ -242,6 +244,7 @@ class Ember:
             max_steps=max_steps,
             max_tokens=max_tokens,
             verbose=self.verbose,
+            system_prompt=PromptStore().get_active(),   # evolved prompt, if promoted
         )
 
     async def run_agent(
@@ -252,6 +255,7 @@ class Ember:
         max_steps:    int  = 25,
         max_tokens:   int  = 4096,
         agent:        EmberAgent | None = None,
+        plan:         str  = "",
     ) -> AgentResult:
         """
         Agentic run: the model explores the repo, edits files, and runs commands
@@ -291,6 +295,14 @@ class Ember:
             context_parts.append(
                 "<past-failures>\nSimilar tasks failed before — avoid repeating "
                 f"these dead ends:\n{warnings}\n</past-failures>"
+            )
+
+        # Plan-first mode (Cline-inspired): the user approved this plan once,
+        # so the agent follows it instead of asking per-step.
+        if plan:
+            context_parts.append(
+                f"<approved-plan>\nThe user has already approved this plan — "
+                f"follow it step by step:\n{plan}\n</approved-plan>"
             )
 
         result = await agent.run(prompt, context="\n\n".join(context_parts))
@@ -341,6 +353,22 @@ class Ember:
                 if analysis:
                     self._memory.update_failure_analysis(failure_id, analysis)
         return result
+
+    async def plan_task(self, prompt: str) -> str:
+        """
+        Plan-first mode, step 1: produce a short numbered plan for user
+        approval before the agent touches anything.
+        """
+        result = await self._router.route(
+            prompt=(
+                "Create a short numbered plan (3-6 steps) for this coding task. "
+                "Steps only — no code, no explanations.\n\n"
+                f"Task: {prompt}"
+            ),
+            system="You are a senior engineer writing a terse execution plan.",
+            max_tokens=400,
+        )
+        return result.response.content.strip() if result.response.success else ""
 
     # ── Phase 7 helpers ───────────────────────────────────────────────────────
     def _load_skill(self, name: str) -> str:
