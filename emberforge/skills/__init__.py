@@ -5,10 +5,25 @@ Stored in memory, searchable by FTS5, loaded at session start if relevant.
 """
 from __future__ import annotations
 
+import re
 import time
 from dataclasses import dataclass
 
 from emberforge.memory import EmberMemory, Skill, SessionRecord
+
+
+def skill_summary(skill: dict) -> str:
+    """
+    One-line description for lazy-skill listings (Pi-style): the first line of
+    the skill's 'When to Use' section, falling back to its title.
+    """
+    content = skill.get("content", "") or ""
+    match = re.search(r"## When to Use\s*\n+(.+)", content)
+    if match:
+        line = match.group(1).strip()
+        if line:
+            return line[:120]
+    return skill.get("title", "")[:120]
 
 
 SKILL_TEMPLATE = """# {title}

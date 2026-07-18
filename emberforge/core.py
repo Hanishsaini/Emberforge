@@ -9,15 +9,19 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+import json
+
 from emberforge.agent import AgentResult, EmberAgent
 from emberforge.compressor import EmberCompressor
+from emberforge.config import settings as _settings
 from emberforge.config.settings import load_config, ensure_emberforge_home, EmberConfig
 from emberforge.context import EmberContext
+from emberforge.gepa import FailureAnalyst, build_trace
 from emberforge.memory import EmberMemory, SessionRecord
 from emberforge.providers import build_providers
 from emberforge.providers.base import BaseProvider
 from emberforge.router.router import EmberRouter, RouterResult
-from emberforge.skills import SkillGenerator
+from emberforge.skills import SkillGenerator, skill_summary
 from emberforge.tools import ApprovalCallback, EmberTools, ToolExecutor
 
 
@@ -227,7 +231,10 @@ class Ember:
         by the chat REPL). For one-shot tasks use run_agent().
         """
         tools    = EmberTools(self.repo_path, compressor=self._compressor)
-        executor = ToolExecutor(tools, auto_approve=auto_approve, approver=approver)
+        executor = ToolExecutor(
+            tools, auto_approve=auto_approve, approver=approver,
+            skill_loader=self._load_skill,
+        )
         return EmberAgent(
             providers=self._providers,
             executor=executor,
@@ -256,15 +263,19 @@ class Ember:
             max_steps=max_steps, max_tokens=max_tokens,
         )
 
-        # Inject learned skills + project memory + failure warnings (Phase 4)
+        # Inject memory + failure warnings; skills are LAZY (Pi-style, Phase 7):
+        # only titles+descriptions enter context, full content via load_skill.
         context_parts: list[str] = []
 
         relevant_skills = self._skills.find_relevant_skills(prompt)
         if relevant_skills:
-            context_parts.append("\n\n".join(
-                f"## Relevant Skill: {s['title']}\n{s['content'][:500]}"
-                for s in relevant_skills
-            ))
+            lines = "\n".join(
+                f"- {s['title']}: {skill_summary(s)}" for s in relevant_skills
+            )
+            context_parts.append(
+                "<skills-available>\nLearned skills that may apply — call the "
+                f"load_skill tool for full instructions:\n{lines}\n</skills-available>"
+            )
 
         brief = self._memory.get_context_brief(self.project)
         if brief:
@@ -274,6 +285,7 @@ class Ember:
         if past_failures:
             warnings = "\n".join(
                 f"- \"{' '.join(f['prompt'].split())[:80]}\" failed with: {f['error'][:120]}"
+                + (f" | analysis: {f['analysis'][:150]}" if f.get("analysis") else "")
                 for f in past_failures
             )
             context_parts.append(
@@ -282,6 +294,8 @@ class Ember:
             )
 
         result = await agent.run(prompt, context="\n\n".join(context_parts))
+        executor = getattr(agent, "_executor", None)
+        self._write_trace(prompt, result, executor)
 
         # Feed the skill engine with REAL tool-call counts (not run counts)
         for _ in range(max(result.tool_calls_made, 1)):
@@ -311,13 +325,63 @@ class Ember:
                     + ", ".join(result.files_changed[:5]),
                 )
         else:
-            self._memory.log_failure(
+            failure_id = self._memory.log_failure(
                 project=self.project,
                 prompt=prompt,
                 provider=result.provider or "agent",
                 error=result.error,
             )
+            # GEPA (Phase 7): post-mortem the trace so the next similar task
+            # inherits the *why*, not just the obituary. Never breaks the run.
+            if self._providers:
+                trace = build_trace(executor.history) if executor else ""
+                analysis = await FailureAnalyst().analyze(
+                    prompt, result.error, trace, self._router,
+                )
+                if analysis:
+                    self._memory.update_failure_analysis(failure_id, analysis)
         return result
+
+    # ── Phase 7 helpers ───────────────────────────────────────────────────────
+    def _load_skill(self, name: str) -> str:
+        """Lazy-skill loader: fetch full skill content on demand (load_skill tool)."""
+        hits = self._memory.search_skills(name, limit=1)
+        if not hits:
+            return f"No skill found matching '{name}'."
+        self._memory.increment_skill_use(hits[0]["id"])
+        return hits[0]["content"][:4000]
+
+    def _write_trace(self, prompt: str, result: AgentResult, executor) -> None:
+        """Persist the last agent run for `emberforge trace` (Pi-style transparency)."""
+        try:
+            trace = {
+                "ts": time.strftime("%Y-%m-%d %H:%M:%S"),
+                "project": self.project,
+                "prompt": prompt,
+                "success": result.success,
+                "error": result.error,
+                "provider": result.provider,
+                "model": result.model,
+                "steps": result.steps,
+                "tokens_in": result.tokens_in,
+                "tokens_out": result.tokens_out,
+                "latency_ms": result.latency_ms,
+                "files_changed": result.files_changed,
+                "tool_calls": [
+                    {
+                        "tool": r.tool,
+                        "args": r.args,
+                        "success": r.success,
+                        "output_preview": r.output_preview,
+                    }
+                    for r in (executor.history if executor else [])
+                ],
+            }
+            path = _settings.EMBERFORGE_HOME / "last_trace.json"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps(trace, indent=2), encoding="utf-8")
+        except Exception:
+            pass   # transparency must never break the run
 
     def session_stats(self) -> dict:
         """Stats for this session."""

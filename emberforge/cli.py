@@ -456,6 +456,44 @@ def learn(
     asyncio.run(_learn())
 
 
+@app.command()
+def trace(
+    raw: bool = typer.Option(False, "--json", help="Print the raw JSON trace"),
+):
+    """Show exactly what the last agent run did — every tool call, every result."""
+    import json as _json
+    from emberforge.config import settings as _settings
+
+    path = _settings.EMBERFORGE_HOME / "last_trace.json"
+    if not path.exists():
+        console.print("[yellow]No trace yet — run [bold]emberforge agent[/bold] first.[/yellow]")
+        raise typer.Exit(1)
+
+    data = _json.loads(path.read_text(encoding="utf-8"))
+    if raw:
+        console.print_json(data=data)
+        return
+
+    status = "[green]✅ success[/green]" if data["success"] else f"[red]❌ {data.get('error', '')}[/red]"
+    console.print(f"\n[bold]{data['prompt'][:100]}[/bold]")
+    console.print(f"{status} · {data['provider']} · {data['steps']} steps · "
+                  f"{data['tokens_in']}→{data['tokens_out']} tokens · "
+                  f"{data['latency_ms']}ms · {data['ts']}\n")
+
+    t = Table(box=box.SIMPLE, header_style="bold cyan")
+    t.add_column("#", width=3)
+    t.add_column("Tool")
+    t.add_column("Args", max_width=50)
+    t.add_column("Result", max_width=60)
+    for i, call in enumerate(data.get("tool_calls", []), 1):
+        icon = "✓" if call["success"] else "[red]✗[/red]"
+        t.add_row(str(i), f"{icon} {call['tool']}",
+                  _json.dumps(call["args"])[:50], call["output_preview"][:60])
+    console.print(t)
+    if data.get("files_changed"):
+        console.print(f"[dim]📝 Changed: {', '.join(data['files_changed'])}[/dim]")
+
+
 @app.command(name="eval")
 def eval_cmd(
     task: str = typer.Option("", "--task", "-t", help="Run a single task by name"),

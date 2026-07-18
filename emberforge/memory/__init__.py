@@ -350,6 +350,13 @@ class EmberMemory:
         self._conn.commit()
         return cur.lastrowid
 
+    def update_failure_analysis(self, failure_id: int, analysis: str) -> None:
+        """Attach a GEPA post-mortem to a logged failure."""
+        self._conn.execute(
+            "UPDATE failures SET analysis=? WHERE id=?", (analysis, failure_id)
+        )
+        self._conn.commit()
+
     def recent_failures(self, project: str = "default", limit: int = 5) -> list[dict]:
         rows = self._conn.execute(
             """SELECT prompt, provider, error, analysis, ts

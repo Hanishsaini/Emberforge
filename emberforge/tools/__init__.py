@@ -409,9 +409,33 @@ class EmberTools:
         return ToolResult(out[:MAX_OUTPUT_CHARS], success=(proc.returncode == 0))
 
 
+# Lazy skills (Pi-inspired): only skill titles live in context; the model
+# pulls full instructions on demand through this tool.
+LOAD_SKILL_SCHEMA: dict = {
+    "type": "function",
+    "function": {
+        "name": "load_skill",
+        "description": (
+            "Load the full instructions of a learned skill by name. Skill "
+            "titles are listed in <skills-available>; call this only when a "
+            "listed skill is actually relevant to the current task."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "Skill title (or close match)"},
+            },
+            "required": ["name"],
+        },
+    },
+}
+
+
 # ── Executor: dispatch + approval gate ────────────────────────────────────────
 # approval callback: (tool_name, description, preview) -> bool
 ApprovalCallback = Callable[[str, str, str], bool]
+# skill loader: skill name -> full skill content (or error text)
+SkillLoader = Callable[[str], str]
 
 
 @dataclass
@@ -433,15 +457,19 @@ class ToolExecutor:
         tools:        EmberTools,
         auto_approve: bool = False,
         approver:     ApprovalCallback | None = None,
+        skill_loader: SkillLoader | None = None,
     ):
-        self._tools       = tools
-        self.auto_approve = auto_approve
-        self._approver    = approver
+        self._tools        = tools
+        self.auto_approve  = auto_approve
+        self._approver     = approver
+        self._skill_loader = skill_loader
         self.history:       list[ExecutionRecord] = []
         self.files_changed: list[str] = []
 
     @property
     def schemas(self) -> list[dict]:
+        if self._skill_loader is not None:
+            return TOOL_SCHEMAS + [LOAD_SKILL_SCHEMA]
         return TOOL_SCHEMAS
 
     def invalidate_read(self, path: str) -> None:
@@ -458,6 +486,21 @@ class ToolExecutor:
                     f"Invalid JSON arguments: {e}", success=False))
         else:
             args = dict(arguments)
+
+        # Lazy skill loading (not a filesystem tool — routed to the memory layer)
+        if name == "load_skill":
+            if self._skill_loader is None:
+                return self._record(name, args, ToolResult(
+                    "load_skill is not available in this session.", success=False))
+            skill_name = str(args.get("name", "")).strip()
+            if not skill_name:
+                return self._record(name, args, ToolResult(
+                    "load_skill requires a 'name' argument.", success=False))
+            try:
+                content = self._skill_loader(skill_name)
+            except Exception as e:
+                content = f"Failed to load skill: {e}"
+            return self._record(name, args, ToolResult(content[:MAX_OUTPUT_CHARS]))
 
         method = getattr(self._tools, name, None)
         if method is None or name.startswith("_"):
