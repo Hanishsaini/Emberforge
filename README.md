@@ -229,4 +229,4 @@ Built on ideas from [Headroom](https://github.com/headroomlabs-ai/headroom) (rev
 
 ## 📄 License
 
-[MIT](LICENSE) — free, forever, like the tools it runs on. Built by [Honey Stark](https://github.com/Hanishsaini).
+[MIT](LICENSE) — free, forever, like the tools it runs on. Built by [Hanish Saini](https://github.com/Hanishsaini).
